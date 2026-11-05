@@ -182,7 +182,7 @@ const sData = {
     duration: {units: 'perm', override: true},
     bonuses: {ac: '@abilities.cha.mod', hp: '2 * @details.level - 1', attackDamage: '@abilities.cha.mod', saveDamage: '', healing: ''},
     match: {attacks: true, proficiency: true, saves: false, disposition: true},
-    profiles: base ? [{_id: 'nixTentacleProf', count: '1', name: 'Spectral Tentacle', uuid: base.uuid}] : [],
+    profiles: base ? [{_id: 'nixTentacleProf0', count: '1', name: 'Spectral Tentacle', uuid: base.uuid}] : [],
     summon: {mode: '', prompt: true}
 };
 let summon = ring.system.activities.contents.find(a => a.name === 'Summon Tentacle' && a.type === 'summon');

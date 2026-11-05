@@ -306,6 +306,32 @@ const flurry = async () => {
     // ---- One window per strike, all at once ------------------------------------------------
     const twoD20 = plan.map(t => needsSecondD20(t));
     const crits = plan.map(t => autoCrit(t));
+    // ---- Lucky (2024): asked before the dice windows, once per strike aimed at a Lucky character ----
+    // A yes spends the point now and gives that strike's window two d20s; the strike's own
+    // workflow then applies the Disadvantage without asking again (globalThis.nixLuckyPending).
+    const luckyQueues = {};                                          // target actor uuid -> [yes/no per strike]
+    const isLuckyFeat = i => i.type === 'feat' && /^lucky/i.test(i.name.trim()) && !/footwork/i.test(i.name)
+        && [...(i.flags?.cat?.embeddedMacros ?? []), ...(i.flags?.['chris-premades']?.embeddedMacros ?? [])].some(m => m.name === 'Lucky: Disadvantage');
+    for (let i = 0; i < plan.length; i++) {
+        const t = plan[i];
+        const ta = t.actor;
+        if (!ta || ta.uuid === me.uuid || t.document.disposition === monk.document.disposition) continue;
+        const lucky = ta.items.find(isLuckyFeat);
+        if (!lucky) continue;
+        const q = (luckyQueues[ta.uuid] ??= []);
+        const n = plan.filter(p => p.actor?.uuid === ta.uuid).length;
+        if (!(lucky.system.uses?.value > 0)) { q.push(false); continue; }
+        const userId = queryUtils.firstOwner(ta, true) ?? game.user.id;
+        const yes = await dialogUtils.confirm(lucky.name, '<b>' + me.name + '</b> is aiming ' + (n > 1 ? 'strike ' + (q.length + 1) + ' of ' + n : 'a strike')
+            + ' of ' + feature.name + ' at <b>' + ta.name + '</b>.<br>Spend a Luck Point to give this attack roll Disadvantage? (' + lucky.system.uses.value + ' left)', {userId});
+        q.push(!!yes);
+        if (!yes) continue;
+        await documentUtils.update(lucky, {'system.uses.spent': (lucky.system.uses.spent ?? 0) + 1});
+        twoD20[i] = true;
+        await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: ta}),
+            content: '<b>' + lucky.name + ':</b> ' + ta.name + ' spends a Luck Point. That strike of ' + me.name + '\'s ' + feature.name + ' has Disadvantage.'});
+    }
+    globalThis.nixLuckyPending = Object.keys(luckyQueues).length ? {attacker: me.uuid, queues: luckyQueues} : null;
     const prerolls = await Promise.all(plan.map((t, i) => {
         const r = new Roll((twoD20[i] ? '2d20' : '1d20') + ' + ' + (crits[i] ? 2 : 1) + 'd' + faces);
         Object.defineProperty(r, 'formula', {value: header(t, i, twoD20[i], crits[i]), configurable: true});
@@ -407,7 +433,7 @@ const flurry = async () => {
                     buttons: [{action: 'strike', label: 'Strike', icon: 'fa-solid fa-hand-fist', default: true}, {action: 'skip', label: 'Skip this target'}],
                     rejectClose: false
                 }).catch(() => null);
-                if (go !== 'strike') { const skip = t.id; while (i < plan.length && plan[i].id === skip) i++; continue; }
+                if (go !== 'strike') { const skip = t.id; while (i < plan.length && plan[i].id === skip) { luckyQueues[plan[i].actor?.uuid]?.shift(); i++; } continue; }
                 if (dist(t) > reach) pressed.add(t.id);
             }
             const v = valuesOf(prerolls[i]);
@@ -426,6 +452,7 @@ const flurry = async () => {
         for (const [h, id] of hooks) Hooks.off(h, id);
         // Chris's Premades' own Flurry of Blows (prompt switched off by the installer) has nothing left to do.
         workflow.targets = new Set();
+        globalThis.nixLuckyPending = null;
     }
 };
 

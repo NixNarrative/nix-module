@@ -10,6 +10,7 @@
 //  ours runs first and clears the targets, so that one has nothing left to do.
 //  Agonizing Blast, the Eldritch Bident and Spell Sniper hook into each beam's
 //  own workflow (installed by Nethtari's fixes).
+//  Lucky (2024) on a target is asked before the dice windows (see the Lucky block).
 //  Removes the inert v13 copy (flags.chris-premades).
 // =====================================================================
 const ENTRY = 'Nix Eldritch Blast beams';
@@ -89,6 +90,32 @@ const beams = async () => {
  
     // ---- One window per beam, all at once --------------------------------------------
     const twoD20 = plan.map(t => needsSecondD20(t));
+    // ---- Lucky (2024): asked before the dice windows, once per beam aimed at a Lucky character ----
+    // A yes spends the point now and gives that beam's window two d20s; the beam's own
+    // workflow then applies the Disadvantage without asking again (globalThis.nixLuckyPending).
+    const luckyQueues = {};                                          // target actor uuid -> [yes/no per beam]
+    const isLuckyFeat = i => i.type === 'feat' && /^lucky/i.test(i.name.trim()) && !/footwork/i.test(i.name)
+        && [...(i.flags?.cat?.embeddedMacros ?? []), ...(i.flags?.['chris-premades']?.embeddedMacros ?? [])].some(m => m.name === 'Lucky: Disadvantage');
+    for (let i = 0; i < plan.length; i++) {
+        const t = plan[i];
+        const ta = t.actor;
+        if (!ta || ta.uuid === me.uuid || t.document.disposition === caster.document.disposition) continue;
+        const lucky = ta.items.find(isLuckyFeat);
+        if (!lucky) continue;
+        const q = (luckyQueues[ta.uuid] ??= []);
+        const n = plan.filter(p => p.actor?.uuid === ta.uuid).length;
+        if (!(lucky.system.uses?.value > 0)) { q.push(false); continue; }
+        const userId = queryUtils.firstOwner(ta, true) ?? game.user.id;
+        const yes = await dialogUtils.confirm(lucky.name, '<b>' + me.name + '</b> is aiming ' + (n > 1 ? 'beam ' + (q.length + 1) + ' of ' + n : 'a beam')
+            + ' of ' + spell.name + ' at <b>' + ta.name + '</b>.<br>Spend a Luck Point to give this attack roll Disadvantage? (' + lucky.system.uses.value + ' left)', {userId});
+        q.push(!!yes);
+        if (!yes) continue;
+        await documentUtils.update(lucky, {'system.uses.spent': (lucky.system.uses.spent ?? 0) + 1});
+        twoD20[i] = true;
+        await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: ta}),
+            content: '<b>' + lucky.name + ':</b> ' + ta.name + ' spends a Luck Point. That beam of ' + me.name + '\'s ' + spell.name + ' has Disadvantage.'});
+    }
+    globalThis.nixLuckyPending = Object.keys(luckyQueues).length ? {attacker: me.uuid, queues: luckyQueues} : null;
     const prerolls = await Promise.all(plan.map((t, i) => {
         const r = new Roll((twoD20[i] ? '2d20' : '1d20') + ' + 1d' + dmgFaces);
         Object.defineProperty(r, 'formula', {value: header(t, twoD20[i]), configurable: true});
@@ -132,7 +159,7 @@ const beams = async () => {
             queue[20] = [...v.atk];
             queue[dmgFaces] = [...v.dmg];
             current = '[' + t.document.name + ']';
-            if (!t.actor || ((t.actor.system.attributes?.hp?.value ?? 1) <= 0 && plan.length > 1)) continue;   // already down
+            if (!t.actor || ((t.actor.system.attributes?.hp?.value ?? 1) <= 0 && plan.length > 1)) { luckyQueues[t.actor?.uuid]?.shift(); continue; }   // already down
             await workflowUtils.syntheticActivityRoll(beam, [t], {options: {targetConfirmation: 'none', nixBeam: i}});
             queue[20] = []; queue[dmgFaces] = [];
         }
@@ -142,6 +169,7 @@ const beams = async () => {
         // Chris's Premades 2's own one-workflow-per-target macro runs after this one:
         // clear the targets so it stands down.
         workflow.targets = new Set();
+        globalThis.nixLuckyPending = null;
     }
 };
  

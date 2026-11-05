@@ -17,6 +17,7 @@ import {currentCampaign} from './campaign.mjs';
 import {healthReport, showHealth, scanEmbedded} from './health.mjs';
 import {checkSettings, exportSettings, fixSettings, importSettings, pickAndImport} from './world-settings.mjs';
 import {NixPanel, applyAll} from './panel.mjs';
+import {revertEntry, revertChain, undoIndex} from './undo.mjs';
  
 let panel;
 const open = () => (panel ??= new NixPanel()).render({force: true});
@@ -26,6 +27,7 @@ Hooks.once('init', () => {
     s('campaign', {scope: 'world', type: String, default: 'auto'});
     s('bindings', {scope: 'world', type: Object, default: {}});
     s('applied', {scope: 'world', type: Object, default: {}});
+    s('undo', {scope: 'world', type: Object, default: {}});
     s('lastCompatWarning', {scope: 'world', type: String, default: ''});
     game.settings.register(MODULE_ID, 'autoUpdate', {
         name: 'Apply automation updates on GM login',
@@ -38,7 +40,7 @@ Hooks.once('init', () => {
     });
  
     game.modules.get(MODULE_ID).api = {
-        open, applyAll, runEntry, statusOf, healthReport, showHealth, scanEmbedded,
+        open, applyAll, runEntry, revertEntry, revertChain, undoIndex, statusOf, healthReport, showHealth, scanEmbedded,
         checkSettings, fixSettings, exportSettings, importSettings, pickAndImport,
         compatReport, detectEngine, currentCampaign, actorFor, bind,
         registry: {CAMPAIGNS, CHARACTERS, ENTRIES, entriesFor}

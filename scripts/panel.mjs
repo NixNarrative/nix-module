@@ -8,6 +8,7 @@ import {detectEngine} from './compat.mjs';
 import {actorFor, bind, candidates, runEntry, statusOf} from './runner.mjs';
 import {currentCampaign, guessCampaign} from './campaign.mjs';
 import {showHealth} from './health.mjs';
+import {revertEntry, undoIndex} from './undo.mjs';
 import {checkSettings, exportSettings, fixSettings, pickAndImport} from './world-settings.mjs';
  
 const esc = s => (foundry.utils.escapeHTML ?? (x => String(x).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]))))(String(s ?? ''));
@@ -67,6 +68,7 @@ export class NixPanel extends foundry.applications.api.ApplicationV2 {
         position: {width: 780, height: 760},
         actions: {
             apply: NixPanel.onApply,
+            revert: NixPanel.onRevert,
             applyAll: NixPanel.onApplyAll,
             health: NixPanel.onHealth,
             fixSettings: NixPanel.onFixSettings,
@@ -86,7 +88,7 @@ export class NixPanel extends foundry.applications.api.ApplicationV2 {
             return {key, c, actor, how, options: candidates(key)};
         });
         return {campaign, saved, guess: guessCampaign(), engine: detectEngine(), rows, chars,
-            settings: checkSettings().filter(s => s.state === 'warn'), version: game.modules.get(MODULE_ID).version};
+            undo: undoIndex(), settings: checkSettings().filter(s => s.state === 'warn'), version: game.modules.get(MODULE_ID).version};
     }
  
     async _renderHTML(ctx) {
@@ -127,6 +129,9 @@ export class NixPanel extends foundry.applications.api.ApplicationV2 {
             const [icon, label] = e.manual && s.state === 'never' ? ['▫️', 'Manual'] : STATE[s.state] ?? ['?', s.state];
             const when = s.rec ? new Date(s.rec.at).toLocaleDateString() + ' (v' + s.rec.version + ')' : '';
             const inactive = INACTIVE.includes(s.state);
+            const u = ctx.undo[e.id];
+            const revert = u && e.kind !== 'tool' ? '<button type="button" class="nix-revert" data-action="revert" data-id="' + e.id + '" title="Undo the last apply ('
+                + esc(new Date(u.at).toLocaleString()) + '): puts back only what it changed"><i class="fa-solid fa-rotate-left"></i> Revert</button>' : '';
             const button = inactive ? '<button type="button" disabled>Apply</button>'
                 : '<button type="button" data-action="apply" data-id="' + e.id + '">' + (e.kind === 'tool' ? 'Run' : s.state === 'current' ? 'Re-apply' : 'Apply') + '</button>';
             h += '<tr' + (inactive ? ' class="nix-dim"' : '') + '><td class="nix-icon" title="' + esc(label) + '">' + icon + '</td>'
@@ -134,9 +139,9 @@ export class NixPanel extends foundry.applications.api.ApplicationV2 {
                 + (e.actors?.length ? ' <small>' + e.actors.map(k => esc(CHARACTERS[k]?.name ?? k)).join(', ') + '</small>' : '')
                 + '<br><small>' + esc(e.does) + '</small></td>'
                 + '<td><small>' + esc(s.state === 'retired' ? 'Retired on v14' : label) + (when ? '<br>' + esc(when) : '') + (s.why ? '<br>' + esc(s.why) : '') + '</small></td>'
-                + '<td>' + button + '</td></tr>';
+                + '<td>' + button + revert + '</td></tr>';
         }
-        h += '</table></section><footer class="nix-small">' + esc(TITLE) + ' v' + esc(ctx.version) + '. Every installer is safe to re-apply: it replaces what it wrote.</footer>';
+        h += '</table></section><footer class="nix-small">' + esc(TITLE) + ' v' + esc(ctx.version) + '. Every installer is safe to re-apply: it replaces what it wrote. Revert undoes the last apply of a row.</footer>';
         return h;
     }
  
@@ -160,6 +165,12 @@ export class NixPanel extends foundry.applications.api.ApplicationV2 {
         target.disabled = true;
         const r = await runEntry(target.dataset.id);
         ui.notifications[r.ok ? 'info' : 'warn'](TITLE + ': ' + r.msg);
+        this.render();
+    }
+    static async onRevert(event, target) {
+        target.disabled = true;
+        const r = await revertEntry(target.dataset.id);
+        if (!r.cancelled) ui.notifications[r.ok ? 'info' : 'warn'](TITLE + ': ' + r.msg);
         this.render();
     }
     static async onApplyAll() { await applyAll(); this.render(); }

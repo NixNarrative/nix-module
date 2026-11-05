@@ -109,13 +109,27 @@ const bidentShunt = async () => {
             content: '<b>' + bident.name + ':</b> ' + target.document.name + ' resists being shunted (Charisma save ' + (total ?? '?') + ' vs DC 10).'});
         return;
     }
+    // Its combatants: remember whether each was hidden, so the return can put them back.
+    const shuntCombatants = game.combats.contents.flatMap(c => c.combatants.filter(cb => cb.tokenId === target.document.id && cb.sceneId === target.document.parent?.id))
+        .map(cb => ({uuid: cb.uuid, hidden: !!cb.hidden}));
     // On the target's effect. document = that effect, actor = the target.
     const onTurn = async () => {
+        // Put the token's combatants back as they were before the shunt (older shunts: just unhide them).
+        const restoreCombatants = async (s, tok) => {
+            const td = tok?.document ?? tok;
+            const list = s?.combatants ?? (td ? game.combats.contents.flatMap(c => c.combatants.filter(cb => cb.tokenId === td.id && cb.sceneId === td.parent?.id))
+                .map(cb => ({uuid: cb.uuid, hidden: false})) : []);
+            for (const c of list) {
+                const cb = await fromUuid(c.uuid);
+                if (cb && !!cb.hidden !== c.hidden) await documentUtils.update(cb, {hidden: c.hidden});
+            }
+        };
         const eff = document;
         const s = eff.flags.world?.bidentShunt;
         if (!s) return;
         const tok = actorUtils.getFirstToken(eff.parent);
         if (tok) await tok.update({hidden: false});
+        await restoreCombatants(s, tok);
         await documentUtils.update(eff, {'flags.world.bidentShunt.returned': true});
         if (tok) {
             const src = s.sourceTokenUuid ? await fromUuid(s.sourceTokenUuid) : null;
@@ -126,10 +140,21 @@ const bidentShunt = async () => {
         await documentUtils.deleteDocument(eff);
     };
     const onDelete = async () => {
+        // Put the token's combatants back as they were before the shunt (older shunts: just unhide them).
+        const restoreCombatants = async (s, tok) => {
+            const td = tok?.document ?? tok;
+            const list = s?.combatants ?? (td ? game.combats.contents.flatMap(c => c.combatants.filter(cb => cb.tokenId === td.id && cb.sceneId === td.parent?.id))
+                .map(cb => ({uuid: cb.uuid, hidden: false})) : []);
+            for (const c of list) {
+                const cb = await fromUuid(c.uuid);
+                if (cb && !!cb.hidden !== c.hidden) await documentUtils.update(cb, {hidden: c.hidden});
+            }
+        };
         const eff = document;
         if (eff.flags.world?.bidentShunt?.returned) return;
         const tok = actorUtils.getFirstToken(eff.parent);
         if (tok?.hidden) await tok.update({hidden: false});
+        await restoreCombatants(eff.flags.world?.bidentShunt, tok);
     };
     const m = (name, event, pass, fn) => ({name, event, pass, macros: [{priority: 50, macro: 'return await (' + fn.toString() + ')();'}]});
     await effectUtils.createEffects(target.actor, [{
@@ -139,7 +164,7 @@ const bidentShunt = async () => {
         duration: {value: 1, units: 'rounds'},
         description: 'Shunted to a plane of eldritch horrors. Reappears at the start of its next turn and takes 2d12 psychic damage.',
         flags: {
-            world: {bidentShunt: {sourceTokenUuid: workflow.token?.document.uuid}},
+            world: {bidentShunt: {sourceTokenUuid: workflow.token?.document.uuid, combatants: shuntCombatants}},
             cat: {identifier: 'bidentShunt', embeddedMacros: [
                 m('Bident shunt return', 'combat', 'actorTurnStart', onTurn),
                 m('Bident shunt cleanup', 'effect', 'deleted', onDelete)
@@ -151,6 +176,10 @@ const bidentShunt = async () => {
         if (f) new Sequence().effect().file(f).atLocation(target).scaleToObject(1.5).play();
     }
     await target.document.update({hidden: true});
+    for (const c of shuntCombatants) {
+        const cb = await fromUuid(c.uuid);
+        if (cb && !cb.hidden) await documentUtils.update(cb, {hidden: true});
+    }
     await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: me}),
         content: '<b>' + bident.name + ':</b> natural 20! ' + target.document.name + ' fails its Charisma save (' + total + (natOne ? ', natural 1' : '')
             + ') and is shunted to a plane of eldritch horrors. It returns at the start of its next turn and takes 2d12 psychic damage.'});

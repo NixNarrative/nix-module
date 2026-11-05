@@ -15,6 +15,7 @@
 import {MODULE_ID, TITLE} from './constants.mjs';
 import {CHARACTERS, ENTRIES} from './registry.mjs';
 import {detectEngine} from './compat.mjs';
+import {hasChanges, saveUndo, startRecording} from './undo.mjs';
  
 const cache = new Map();
  
@@ -246,12 +247,15 @@ export async function runEntry(entry, {silent = false} = {}) {
     }
     if (entry.actors?.length && !actors.length) return {ok: false, msg: 'None of its characters are in this world.'};
  
-    let extra = '';
+    // Record what it changes, so it can be reverted from the panel.
+    const prevApplied = getApplied()[entry.id];
+    const recorder = entry.kind !== 'tool' ? startRecording() : null;
+    let extra = '', early = null, failure = null;
     try {
         if (entry.kind === 'embedded') {
             const r = await installEmbedded(entry, actors[0], code, engine);
-            if (!r.ok) return r;
-            extra = ' ' + r.msg;
+            if (!r.ok) early = r;
+            else extra = ' ' + r.msg;
         } else if (entry.allAtOnce || !entry.actors?.length) {
             await execute(code, actors);
         } else {
@@ -259,8 +263,16 @@ export async function runEntry(entry, {silent = false} = {}) {
         }
     } catch (err) {
         console.error(TITLE + ' | ' + entry.id + ' failed', err);
-        return {ok: false, msg: entry.title + ' failed: ' + err.message};
+        failure = err;
     }
+    const undo = recorder ? await recorder.stop() : null;
+    const ok = !early && !failure;
+    if (undo && (ok || hasChanges(undo))) {
+        try { await saveUndo(entry, undo, prevApplied, !ok); }
+        catch (err) { console.warn(TITLE + ' | could not save the revert point for ' + entry.id, err); }
+    }
+    if (early) return early;
+    if (failure) return {ok: false, msg: entry.title + ' failed: ' + failure.message + (hasChanges(undo) ? ' The part that ran can be undone with Revert.' : '')};
     if (entry.kind !== 'tool') {
         const applied = getApplied();
         applied[entry.id] = {hash: h, version: game.modules.get(MODULE_ID).version, at: Date.now(), engine: engine.id,

@@ -69,7 +69,7 @@ export const ENTRIES = [
     {id: 'daylight-dispel', title: 'Daylight / Dawn dispel', kind: 'world', file: fj('world/install-daylight-dispel.js'), campaigns: [FJ, JTE], order: 13,
         v14: {file: fj('world/v14/install-daylight-dispel.js')},
         does: 'Daylight and Dawn remove overlapping Darkness of equal or lower level.'},
-    {id: 'lucky', title: 'Lucky (2024)', kind: 'world', file: fj('world/install-lucky.js'), campaigns: [FJ], order: 14,
+    {id: 'lucky', title: 'Lucky (2024)', kind: 'world', file: fj('world/install-lucky.js'), campaigns: [FJ, JTE, EE], order: 14,
         v14: {file: fj('world/v14/install-lucky.js')},
         does: '2024 Lucky for every character that has it.'},
     {id: 'life-bond', title: 'Life Bond (Find Steed)', kind: 'world', file: fj('world/install-life-bond.js'), campaigns: [FJ, JTE], order: 15,

@@ -59,7 +59,7 @@ Test on a duplicate of each world before moving a campaign. Details: `docs/V14.m
 ## Layout
 ```
 module.json
-scripts/        main, registry, runner, panel, health, compat, world-settings, campaign
+scripts/        main, registry, runner, undo (Revert), panel, health, compat, world-settings, campaign
 automations/    the table-tested scripts, unchanged (v14 copies in v14/ folders)
 docs/           campaign READMEs, V14.md, V14-MAPPING.md, V14-PILOT-BANGIRAS.md, V14-PORT-WORLD.md
 styles/

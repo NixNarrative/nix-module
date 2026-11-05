@@ -28,3 +28,8 @@ button.nix-module-open { margin-top: 0.4rem; width: 100%; }
 .nix-health .window-content { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .nix-health .dialog-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.25rem; }
 .nix-health .form-footer, .nix-health footer { flex: 0 0 auto; }
+/* Apply / Revert stacked in the last column. */
+.nix-module .nix-table td:last-child { width: 7.5rem; }
+.nix-module .nix-table td:last-child button { display: block; width: 100%; white-space: nowrap; }
+.nix-module .nix-table td:last-child button + button { margin-top: 0.25rem; }
+.nix-module button.nix-revert { font-size: 0.85em; }

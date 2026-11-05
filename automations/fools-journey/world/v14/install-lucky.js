@@ -6,7 +6,8 @@
 //   - "Luck Point: Advantage": Advantage on the next D20 Test
 //     (activity macro: roll / activityRollFinished / 50)
 //   - When attacked: asked whether to spend a point to give the attack
-//     Disadvantage (item macro: roll / targetAttackRollConfig / 50)
+//     Disadvantage (item macro: roll / targetAttackRollConfig / 50), before the
+//     attack is rolled; only when he's a target and the attacker isn't on his side
 //  Removes the inert v13 copies (flags.chris-premades).
 // =====================================================================
 const lc = s => String(s ?? '').toLowerCase().trim();
@@ -31,6 +32,16 @@ const luckyDis = async () => {
     const lucky = document;
     const me = lucky.parent;
     if (!workflow?.actor || workflow.actor.uuid === me.uuid) return;
+    // Only when he is a target of this attack, and the attacker isn't on his side.
+    const myTok = Array.from(workflow.targets ?? []).find(t => t?.actor?.uuid === me.uuid);
+    if (!myTok) return;
+    if (workflow.token && workflow.token.document.disposition === myTok.document.disposition) return;
+    // Already decided before an Eldritch Blast's dice windows: use that, don't ask again.
+    const pend = globalThis.nixLuckyPending;
+    if (pend?.attacker === workflow.actor.uuid && pend.queues?.[me.uuid]) {
+        if (pend.queues[me.uuid].shift()) workflow.tracker.disadvantage.add(lucky.name, lucky.name);
+        return;
+    }
     if (!(lucky.system.uses?.value > 0)) return;
     if (workflow.nixLuckyAsked?.has?.(me.uuid)) return;
     (workflow.nixLuckyAsked ??= new Set()).add(me.uuid);
