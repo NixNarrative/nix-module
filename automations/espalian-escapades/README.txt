@@ -4,6 +4,9 @@ Party (level 3): Silkie (Bard 3, College of Dance, Drow), Silent Silk (Silkie's 
  
 Every file is a Foundry **Script** macro: Macro Directory > Create Macro > Type **Script** > paste > run **as GM** with that character's token selected. All are safe to re-run. After re-importing a character or re-applying a Chris's Premades automation, run that character's installer again.
  
+## Foundry v14
+v14 copies are in each character's `v14/` folder (Nix Fix runs them on a Chris's Premades 2 world). Before running them, apply in the Medkit: Silkie's Bardic Inspiration; Lyric's Wild Shape, Starry Form, Wild Companion, Absorb Elements. Notes and test checklist: nix-module/docs/V14-PORT-ESPALIAN.md.
+
 ## Run order
 1. `silkie/install-silkie-fixes.js`
 2. `silent-silk/install-silent-silk-fixes.js`

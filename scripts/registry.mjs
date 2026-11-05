@@ -153,7 +153,7 @@ export const ENTRIES = [
     // ---------------- Journey to the East ----------------
     {id: 'nox-fixes', title: 'Nox fixes', kind: 'character', file: jte('nox/install-nox-fixes.js'), campaigns: [JTE], actors: ['nox'], order: 20,
         v14: {file: jte('nox/v14/install-nox-fixes.js')},
-        does: 'Unarmed Strike, Uncanny Metabolism, Deflect Attacks, Self-Restoration, Giant-Eel Scarf, Sentinel. (v14: Unarmed Strike, Empowered Strikes and Deflect Attacks are Chris\'s Premades 2; Uncanny Metabolism asks at initiative.)'},
+        does: 'Unarmed Strike, Uncanny Metabolism, Deflect Attacks, Self-Restoration, Giant-Eel Scarf, Sentinel, Flurry of Blows (target-aware strikes, one dice window each). (v14: Unarmed Strike, Empowered Strikes and Deflect Attacks are Chris\'s Premades 2; Uncanny Metabolism asks at initiative. Re-run after re-applying Monk\'s Focus.)'},
     {id: 'akira-fixes', title: 'Akira fixes', kind: 'character', file: jte('akira/install-akira-fixes.js'), campaigns: [JTE], actors: ['akira'], order: 30,
         v14: {file: jte('akira/v14/install-akira-fixes.js')},
         does: 'Fire Shield, Fount of Sunlight, Combat/Font of Inspiration, Extended + Subtle Spell, Spellfire Adept. (v14: Fire Shield and Font of Inspiration are Chris\'s Premades 2; Combat Inspiration rides on its Bardic Inspiration. Re-run after re-applying Bardic Inspiration.)'},
@@ -167,15 +167,19 @@ export const ENTRIES = [
         v14: {file: jte('peri/v14/install-peri-fixes.js')},
         does: 'Fairy Magic, Wild Surge, Great Weapon Master, Mage Slayer. (v14: apply Chris\'s Premades 2\'s Rage and legacy Wild Surge first.)'},
  
-    // ---------------- Espalian Escapades (v13 only; no v14 copies planned) ----------------
-    {id: 'silkie-fixes', title: 'Silkie fixes', kind: 'character', file: 'espalian-escapades/silkie/install-silkie-fixes.js', campaigns: [EE], actors: ['silkie'], order: 10,
-        does: 'Unarmored Defense, Unarmed Strike, Agile Strikes, Robe of Useful Items, prepared spells, Fey Ancestry.'},
-    {id: 'silent-silk-fixes', title: 'Silent Silk fixes', kind: 'character', file: 'espalian-escapades/silent-silk/install-silent-silk-fixes.js', campaigns: [EE], actors: ['silentSilk'], order: 20,
+    // ---------------- Espalian Escapades ----------------
+    {id: 'silkie-fixes', title: 'Silkie fixes', kind: 'character', file: 'espalian-escapades/silkie/install-silkie-fixes.js',
+        v14: {file: 'espalian-escapades/silkie/v14/install-silkie-fixes.js'}, campaigns: [EE], actors: ['silkie'], order: 10,
+        does: 'Unarmored Defense, Unarmed Strike, Agile Strikes, Robe of Useful Items, prepared spells, Fey Ancestry. (v14: re-run after re-applying Bardic Inspiration in the Medkit.)'},
+    {id: 'silent-silk-fixes', title: 'Silent Silk fixes', kind: 'character', file: 'espalian-escapades/silent-silk/install-silent-silk-fixes.js',
+        v14: {file: 'espalian-escapades/silent-silk/v14/install-silent-silk-fixes.js'}, campaigns: [EE], actors: ['silentSilk'], order: 20,
         does: 'Charisma spells, Psionic Power, Psi-Bolstered Knack, Psychic Whispers, Robe, Psychic Blade.'},
-    {id: 'hellsing-fixes', title: 'Hellsing fixes', kind: 'character', file: 'espalian-escapades/hellsing/install-hellsing-fixes.js', campaigns: [EE], actors: ['hellsing'], order: 30,
+    {id: 'hellsing-fixes', title: 'Hellsing fixes', kind: 'character', file: 'espalian-escapades/hellsing/install-hellsing-fixes.js',
+        v14: {file: 'espalian-escapades/hellsing/v14/install-hellsing-fixes.js'}, campaigns: [EE], actors: ['hellsing'], order: 30,
         does: 'Hemocraft DC, Crimson Rite, Bloated Agony, Shifting, Blood Maledict, Hybrid Transformation.'},
-    {id: 'lyric-fixes', title: 'Lyric fixes', kind: 'character', file: 'espalian-escapades/lyric/install-lyric-fixes.js', campaigns: [EE], actors: ['lyric'], order: 40,
-        does: 'Rename, Wild Shape, Starry Form, Fey Step, Trance, Absorb Elements.'}
+    {id: 'lyric-fixes', title: 'Lyric fixes', kind: 'character', file: 'espalian-escapades/lyric/install-lyric-fixes.js',
+        v14: {file: 'espalian-escapades/lyric/v14/install-lyric-fixes.js'}, campaigns: [EE], actors: ['lyric'], order: 40,
+        does: 'Rename, Wild Shape, Starry Form, Fey Step, Trance, Absorb Elements. (v14: Wild Shape, Starry Form, Wild Companion and Absorb Elements are Chris\'s Premades 2; apply them in the Medkit first.)'}
 ];
  
 // Run order inside a campaign: world installers first, then each character in table order.

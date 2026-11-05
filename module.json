@@ -2,7 +2,7 @@
   "id": "nix-module",
   "title": "Nix Fix",
   "description": "Nix's campaign automations (The Fool's Journey, Journey to the East, Espalian Escapades): every tested installer and embedded macro in one place, applied and kept up to date per world, with a health check, version check and world-settings sync. Runs on Foundry v13 (Chris's Premades 1) and v14 (Chris's Premades 2 + CAT).",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "authors": [{"name": "Nix", "email": "nixnarrative@gmail.com"}],
   "compatibility": {"minimum": "13", "verified": "13"},
   "esmodules": ["scripts/main.mjs"],

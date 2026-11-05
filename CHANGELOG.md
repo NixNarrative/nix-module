@@ -1,3 +1,14 @@
+# 1.5.0 (2026-11-04)
+- **v14: Espalian Escapades ported.** Silkie, Silent Silk, Hellsing and Lyric fixes have v14 copies. Every automation in all three campaigns now runs on v14 or is retired. See docs/V14-PORT-ESPALIAN.md.
+- v14 Psi-Bolstered Knack: `skill/actorBonus` + `check/actorBonus` (tool checks) returning the changed roll; the die is still spent only on a success.
+- v14 Hellsing: the Crimson Rite, Bloated Agony and Hybrid Transformation effects carry their own CAT macros; the rite ends itself on any rest (`rest/actorShort`) instead of a DAE rest duration. Configure Transformation Look and Lyric's Trance are DialogV2 forms (no `DialogApp`).
+- v14 Lyric: Fey Step season gate at `activityPreTargeting` (reads `actor` / `activity`, no workflow at that pass).
+- **Nox: Flurry of Blows rework (v13 and v14)**, built like Nethtari's Eldritch Blast beams. One hostile target selected: all strikes go to it (3 at Monk 10+). Two or more: a pop-up splits the strikes. None: a pop-up of hostile creatures within 65 ft (he can move between them). One dice window per strike, all at once, with the attack d20 and the Martial Arts damage die; Midi then resolves each strike with those dice. A target out of reach asks him to move first; if a target drops, the strikes left can go to another hostile creature in range. Other rolls during a strike (a Stunning Strike save, an opportunity attack) roll as usual.
+  - v13: `midi-item` / `rollFinished` / 10 on the item holding Flurry (Monk's Focus); Chris's Premades 1's `promptForTargets` is switched off so its own flurry stands down. Strikes count as a Special action, like CPR's.
+  - v14: `roll` / `activityRollFinished` / 10 on the Flurry activity; Chris's Premades 2's generic `extraAttack` on it gets `prompt: false`. Re-run Nox fixes after re-applying Monk's Focus in the Medkit.
+  - Both play Chris's Premades' flurry animation themselves (JB2A Patreon).
+- Retired on v14 inside the installers: the Chris's Premades 1 `itemUpdate` calls (Bardic Inspiration, Starry Form, Wild Companion, Absorb Elements: apply them in the Medkit) and Lyric's Wild Shape counter fix (Chris's Premades 2's Wild Shape).
+
 # 1.4.0 (2026-11-04)
 - **v14: Journey to the East ported.** Nox, Akira, Cordelia, Tsuki and Peri fixes have v14 copies. Every Journey to the East automation now runs on v14 or is retired; only Espalian Escapades stays v13. See docs/V14-PORT-JOURNEY-EAST.md.
 - v14 fate stack (Cordelia's Portent, Tsuki's Cosmic Omen) rebuilt on CAT passes: attacks at `actorAttackRoll` / `sceneAttackRoll` 900 with `workflow.setAttackRoll`, saves at `save` `actorBonus` / `sceneBonus` 300 returning the changed roll. The d20 swap and Weal/Woe add no longer need Chris's Premades 1 helpers; Cosmic Omen rolls its own d6.

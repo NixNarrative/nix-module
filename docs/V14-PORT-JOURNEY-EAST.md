@@ -62,6 +62,7 @@ Things the sources couldn't settle are marked **(confirm)**.
 - [ ] **Self-Restoration**: Frightened at the end of his turn: pop-up; pick ends it.
 - [ ] **Giant-Eel Scarf**: a monster's grapple save gets advantage; Hold Person's doesn't; escape checks get advantage against a monster's grapple. **(confirm `workflowUtils.getSaveSource(config).item` is the monster's item)**
 - [ ] **Sentinel**: an enemy within 5 ft hits an ally: reaction prompt; a hit sets its speed to 0 for the turn.
+- [ ] **Flurry of Blows** (also test on v13): one hostile targeted: 3 dice windows at once (attack + damage), all on it, no CPR2 target prompt. Two targeted: split pop-up. None: pop-up of hostiles within 65 ft; a far one asks him to move, then strikes. Kill the first target: the rest go to someone else. A Stunning Strike save mid-flurry rolls normally. **(confirm CPR2's extraAttack stands down with `prompt: false`, `syntheticActivityRoll` picks the strike's attack activity, and `cat.skipWeaponAnimation` stops a double animation)**
 
 ### Akira
 - [ ] **Fire Shield / Font of Inspiration / Find Steed** (CPR2) work as before (Font picks the slot).
