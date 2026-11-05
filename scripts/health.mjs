@@ -123,8 +123,9 @@ export async function healthReport() {
 export async function showHealth() {
     const r = await healthReport();
     await foundry.applications.api.DialogV2.prompt({
+        classes: ['nix-health'],
         window: {title: TITLE + ': health check', resizable: true},
-        position: {width: 720, height: 640},
+        position: {width: 720, height: Math.min(640, window.innerHeight - 80)},
         content: r.html,
         ok: {label: 'Close'},
         rejectClose: false

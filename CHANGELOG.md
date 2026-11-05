@@ -1,3 +1,7 @@
+# 1.5.1 (2026-11-05)
+- **Fix (v14): character installers failed with "'get' on proxy: property 'tokens' is a read-only and non-configurable data property".** On Foundry v14 `canvas.tokens` is locked, and the panel's canvas stand-in (a Proxy around the real canvas) wasn't allowed to swap it. The stand-in now forwards from an empty object, so every Setup and character row (Metamagic fix-up, Magicians Judge setup, all character fixes) runs from the panel again. v13 behaviour is unchanged.
+- **Fix: the Health check window scrolls.** The report scrolls inside the window and the Close button stays visible; the window also fits short screens.
+
 # 1.5.0 (2026-11-04)
 - **v14: Espalian Escapades ported.** Silkie, Silent Silk, Hellsing and Lyric fixes have v14 copies. Every automation in all three campaigns now runs on v14 or is retired. See docs/V14-PORT-ESPALIAN.md.
 - v14 Psi-Bolstered Knack: `skill/actorBonus` + `check/actorBonus` (tool checks) returning the changed roll; the die is still spent only on a success.

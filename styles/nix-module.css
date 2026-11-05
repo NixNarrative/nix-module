@@ -24,3 +24,7 @@
 .nix-list li { margin-bottom: 0.4rem; }
 button.nix-module-open { margin-top: 0.4rem; width: 100%; }
  
+/* Health check: the report scrolls, the Close button stays put (v13 + v14 DialogV2). */
+.nix-health .window-content { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.nix-health .dialog-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.25rem; }
+.nix-health .form-footer, .nix-health footer { flex: 0 0 auto; }

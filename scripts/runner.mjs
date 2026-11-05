@@ -96,22 +96,30 @@ export async function bind(charKey, actorUuid) {
  
 // ---------------------------------------------------------------- running
 // A stand-in for `canvas` in which canvas.tokens.controlled is the given tokens.
+// Built on empty targets that forward to the real objects: on Foundry v14,
+// canvas.tokens is a read-only, non-configurable property, and a Proxy wrapped
+// around the real canvas may not return anything else for it (TypeError).
+function forwardTo(real, overrides) {
+    return new Proxy(Object.create(null), {
+        get(_, p) {
+            if (Object.hasOwn(overrides, p)) return overrides[p];
+            const v = Reflect.get(real, p, real);
+            return typeof v === 'function' ? v.bind(real) : v;
+        },
+        has(_, p) { return Object.hasOwn(overrides, p) || Reflect.has(real, p); },
+        set(_, p, v) { return Reflect.set(real, p, v, real); },
+        getPrototypeOf() { return Reflect.getPrototypeOf(real); }
+    });
+}
+
 function canvasWith(controlled) {
     const real = globalThis.canvas;
     const realTokens = real?.tokens;
     const tokens = realTokens
-        ? new Proxy(realTokens, {get(t, p) {
-            if (p === 'controlled') return controlled;
-            const v = Reflect.get(t, p, t);
-            return typeof v === 'function' ? v.bind(t) : v;
-        }})
+        ? forwardTo(realTokens, {controlled})
         : {controlled, placeables: [], get: () => null};
     if (!real) return {tokens, ready: false, scene: null};
-    return new Proxy(real, {get(t, p) {
-        if (p === 'tokens') return tokens;
-        const v = Reflect.get(t, p, t);
-        return typeof v === 'function' ? v.bind(t) : v;
-    }});
+    return forwardTo(real, {tokens});
 }
  
 // What the installer sees as "the selected token" for an actor: the real token on
