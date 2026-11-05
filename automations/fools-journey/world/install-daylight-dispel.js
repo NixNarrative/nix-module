@@ -1,0 +1,20 @@
+// =====================================================================
+//  INSTALL DAYLIGHT / DAWN DISPEL: Script macro (run as GM). Safe to re-run.
+//  Writes the dispel-Darkness script onto every Daylight and Dawn spell in the
+//  world (sidebar actors and unlinked tokens in every scene).
+// =====================================================================
+const ENTRY = 'Nix Daylight Dispel';
+const MACRO = "// =====================================================================\n//  DAYLIGHT / DAWN DISPEL DARKNESS: Chris's Premades Embedded Macro\n//  On Daylight and Dawn spells. Midi Item | rollFinished | 60\n//  (install-daylight-dispel.js writes it onto every Daylight and Dawn.)\n//\n//  When the spell's area overlaps a magical Darkness made by a spell of\n//  this cast's level or lower, that Darkness is dispelled: its template is\n//  removed and the caster's concentration on it ends.\n// =====================================================================\n\nconst level = Number(workflow.castData?.castLevel ?? workflow.item.system.level ?? 0);\nconst scene = canvas.scene;\nconst gridFt = canvas.dimensions.distance / canvas.dimensions.size;   // feet per pixel\nlet center, radius;\nconst tpl = workflow.template;\nif (tpl) { center = {x: tpl.x, y: tpl.y}; radius = Number(tpl.distance) || 0; }\nelse if (workflow.token) {\n    center = workflow.token.center;\n    radius = /dawn/i.test(workflow.item.name) ? 30 : 60;\n}\nif (!center) return;\nconst darkness = scene.templates.filter(t => {\n    const v = t.flags?.['chris-premades']?.template;\n    return v?.visibility?.magicalDarkness || /darkness/i.test(v?.name ?? '');\n});\nconst dispelled = [], tooStrong = [];\nfor (const t of darkness) {\n    const dist = Math.hypot(t.x - center.x, t.y - center.y) * gridFt;\n    if (dist > radius + (Number(t.distance) || 0)) continue;\n    const dLevel = Number(t.flags?.['chris-premades']?.castData?.castLevel\n        ?? t.flags?.dnd5e?.spellLevel?.value ?? t.flags?.dnd5e?.spellLevel ?? 2);\n    const name = t.flags['chris-premades']?.template?.name ?? 'Darkness';\n    if (dLevel > level) { tooStrong.push(name + ' (level ' + dLevel + ')'); continue; }\n    // End the caster's concentration on it, if any; otherwise just remove the template.\n    let ended = false;\n    for (const a of game.actors.contents.concat(scene.tokens.filter(x => !x.actorLink && x.actor).map(x => x.actor))) {\n        for (const e of a.effects) {\n            const deps = e.getFlag?.('dnd5e', 'dependents') ?? [];\n            if (deps.some(d => d.uuid === t.uuid)) { await genericUtils.remove(e); ended = true; }\n        }\n    }\n    if (!ended || scene.templates.get(t.id)) await genericUtils.remove(t);\n    dispelled.push(name + ' (level ' + dLevel + ')');\n}\nif (dispelled.length || tooStrong.length) await ChatMessage.create({\n    speaker: ChatMessage.getSpeaker({actor: workflow.actor}),\n    content: '<b>' + workflow.item.name + ':</b> '\n        + (dispelled.length ? 'the light dispels ' + dispelled.join(', ') + '.' : '')\n        + (tooStrong.length ? ' Too powerful to dispel: ' + tooStrong.join(', ') + '.' : '')\n});\n";
+const actors = new Map();
+game.actors.forEach(a => actors.set(a.uuid, {actor: a, where: 'sidebar'}));
+for (const scene of game.scenes) for (const t of scene.tokens) if (!t.actorLink && t.actor) actors.set(t.actor.uuid, {actor: t.actor, where: 'token in ' + scene.name});
+const done = [];
+for (const {actor, where} of actors.values()) {
+    for (const item of actor.items.filter(i => i.type === 'spell' && ['daylight', 'dawn'].includes(i.name.toLowerCase().trim()))) {
+        const list = (item.getFlag('chris-premades', 'embeddedMacros') ?? []).filter(m => m.name !== ENTRY);
+        list.push({name: ENTRY, type: 'midi-item', pass: 'rollFinished', priority: 60, macro: MACRO});
+        await item.setFlag('chris-premades', 'embeddedMacros', list);
+        done.push(actor.name + ': ' + item.name + ' (' + where + ')');
+    }
+}
+ChatMessage.create({whisper: [game.user.id], content: '<b>Daylight/Dawn dispel installed on:</b><br>' + (done.join('<br>') || '<i>none found</i>')});

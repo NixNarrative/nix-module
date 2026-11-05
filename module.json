@@ -1,0 +1,26 @@
+{
+  "id": "nix-module",
+  "title": "Nix Fix",
+  "description": "Nix's campaign automations (The Fool's Journey, Journey to the East, Espalian Escapades): every tested installer and embedded macro in one place, applied and kept up to date per world, with a health check, version check and world-settings sync. Runs on Foundry v13 (Chris's Premades 1) and v14 (Chris's Premades 2 + CAT).",
+  "version": "1.4.0",
+  "authors": [{"name": "Nix", "email": "nixnarrative@gmail.com"}],
+  "compatibility": {"minimum": "13", "verified": "13"},
+  "esmodules": ["scripts/main.mjs"],
+  "styles": ["styles/nix-module.css"],
+  "relationships": {
+    "systems": [{"id": "dnd5e", "type": "system", "compatibility": {"minimum": "5.0.0"}}],
+    "requires": [
+      {"id": "midi-qol", "type": "module"},
+      {"id": "chris-premades", "type": "module"}
+    ],
+    "recommends": [
+      {"id": "gambits-premades", "type": "module", "reason": "Opportunity attacks and reactions used by several automations."},
+      {"id": "sequencer", "type": "module", "reason": "Animations."},
+      {"id": "jb2a_patreon", "type": "module", "reason": "Animation files."},
+      {"id": "vision-5e", "type": "module", "reason": "Darkness & Devil's Sight installer."},
+      {"id": "dae", "type": "module", "reason": "Effects."},
+      {"id": "times-up", "type": "module", "reason": "Effect durations."},
+      {"id": "socketlib", "type": "module", "reason": "Player prompts."}
+    ]
+  }
+}

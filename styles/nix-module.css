@@ -1,0 +1,26 @@
+.nix-module .window-content { display: block; overflow-y: auto; padding: 0.75rem 1rem; }
+.nix-module h3 { margin: 1rem 0 0.4rem; border-bottom: 1px solid var(--color-border-light-2, #8884); }
+.nix-module .nix-head { display: flex; flex-direction: column; gap: 0.5rem; }
+.nix-module .nix-head label { display: flex; align-items: center; gap: 0.5rem; font-weight: bold; }
+.nix-module .nix-head select { flex: 1; }
+.nix-module .nix-engine { padding: 0.35rem 0.5rem; border-radius: 4px; }
+.nix-module .nix-engine.ok { background: rgba(60, 160, 80, 0.15); }
+.nix-module .nix-engine.bad { background: rgba(200, 60, 60, 0.2); }
+.nix-module .nix-buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.nix-module .nix-buttons button { flex: 1 1 10rem; }
+.nix-module .nix-table { width: 100%; border-collapse: collapse; }
+.nix-module .nix-table td { padding: 0.3rem 0.35rem; vertical-align: top; border-bottom: 1px solid var(--color-border-light-2, #8883); }
+.nix-module .nix-table td:last-child { width: 6.5rem; text-align: right; }
+.nix-module .nix-table tr.nix-dim { opacity: 0.55; }
+.nix-module .nix-icon { width: 1.6rem; text-align: center; }
+.nix-module .nix-kind { font-size: 0.75em; padding: 0 0.35em; border-radius: 3px; background: rgba(120, 120, 160, 0.25); }
+.nix-module .nix-settings { margin-top: 0.6rem; padding: 0.4rem 0.6rem; background: rgba(220, 160, 40, 0.15); border-radius: 4px; }
+.nix-module .nix-empty { margin-top: 1rem; font-style: italic; }
+.nix-module footer, .nix-small { font-size: 0.8em; opacity: 0.8; margin-top: 0.6rem; }
+.nix-warn { color: #c0392b; }
+.nix-report table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+.nix-report td { padding: 0.2rem 0.3rem; border-bottom: 1px solid #8883; vertical-align: top; }
+.nix-list { list-style: none; padding: 0; }
+.nix-list li { margin-bottom: 0.4rem; }
+button.nix-module-open { margin-top: 0.4rem; width: 100%; }
+ 
