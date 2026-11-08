@@ -52,7 +52,7 @@ export async function fixSettings() {
 // Modules whose world settings are worth keeping identical across campaigns.
 export const SYNC_MODULES = ['midi-qol', 'chris-premades', 'cat', 'gambits-premades', 'autoanimations', 'dae', 'times-up',
     'vision-5e', 'sequencer', 'automated-conditions-5e', 'tidy5e-sheet', 'token-action-hud-dnd5e', 'monks-tokenbar',
-    'smart-target', 'levels', 'wall-height', 'aura-effects', 'dnd5e'];
+    'smarttarget', 'acdc', 'levels', 'wall-height', 'aura-effects', 'dnd5e'];
  
 // Never copied: per-world bookkeeping that would break the other world.
 const NEVER = [/^nix-module\.(bindings|applied|campaign)$/, /migration/i, /version$/i, /^core\./];

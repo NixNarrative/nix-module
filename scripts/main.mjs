@@ -6,6 +6,7 @@
 //   - the GM applies them from one window, per world, without selecting tokens
 //   - when the module updates, the GM is told which automations changed
 //   - health check, version check and world-settings sync across campaigns
+//   - players' Smart Target / dice-mode choices kept on their user, not the browser
 //
 //  API: game.modules.get('nix-module').api
 // =====================================================================
@@ -18,6 +19,8 @@ import {healthReport, showHealth, scanEmbedded} from './health.mjs';
 import {checkSettings, exportSettings, fixSettings, importSettings, pickAndImport} from './world-settings.mjs';
 import {NixPanel, applyAll} from './panel.mjs';
 import {revertEntry, revertChain, undoIndex} from './undo.mjs';
+import {registerPlayerSettings, restorePlayerSettings, playerSettingsReport, clearPlayerSettings} from './player-settings.mjs';
+import {registerSidebarCollapse} from './sidebar-collapse.mjs';
  
 let panel;
 const open = () => (panel ??= new NixPanel()).render({force: true});
@@ -34,6 +37,8 @@ Hooks.once('init', () => {
         hint: 'When ' + TITLE + ' updates, automations that were already applied in this world are re-applied automatically the next time the GM logs in. New ones still wait for you.',
         scope: 'world', config: true, type: Boolean, default: false
     });
+    registerPlayerSettings();
+    registerSidebarCollapse();
     game.settings.registerMenu(MODULE_ID, 'panel', {
         name: TITLE, label: 'Open ' + TITLE, hint: 'Apply and update the campaign automations, health check, settings sync.',
         icon: 'fa-solid fa-hat-wizard', type: NixPanel, restricted: true
@@ -43,6 +48,7 @@ Hooks.once('init', () => {
         open, applyAll, runEntry, revertEntry, revertChain, undoIndex, statusOf, healthReport, showHealth, scanEmbedded,
         checkSettings, fixSettings, exportSettings, importSettings, pickAndImport,
         compatReport, detectEngine, currentCampaign, actorFor, bind,
+        restorePlayerSettings, playerSettingsReport, clearPlayerSettings,
         registry: {CAMPAIGNS, CHARACTERS, ENTRIES, entriesFor}
     };
 });
