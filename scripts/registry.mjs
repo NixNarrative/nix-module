@@ -28,7 +28,8 @@
 export const CAMPAIGNS = {
     'fools-journey': "The Fool's Journey",
     'journey-to-the-east': 'Journey to the East',
-    'espalian-escapades': 'Espalian Escapades'
+    'espalian-escapades': 'Espalian Escapades',
+    'court-of-ravenloft': 'Court of Ravenloft'
 };
  
 // How each character's actor is recognised. First pattern is the preferred name.
@@ -48,34 +49,42 @@ export const CHARACTERS = {
     silkie: {name: 'Silkie', campaign: 'espalian-escapades', match: [/^silkie\b/i]},
     silentSilk: {name: 'Silent Silk', campaign: 'espalian-escapades', match: [/^silent silk\b/i]},
     hellsing: {name: 'Hellsing Elbur', campaign: 'espalian-escapades', match: [/^hellsing\b/i, /\bhellsing\b/i]},
-    lyric: {name: 'Lyric', campaign: 'espalian-escapades', match: [/^lyric\b/i, /^michela\b/i]}
+    lyric: {name: 'Lyric', campaign: 'espalian-escapades', match: [/^lyric\b/i, /^michela\b/i]},
+    petra: {name: 'Petra', campaign: 'court-of-ravenloft', match: [/^petra\b/i]},
+    sydmore: {name: 'Sydmore', campaign: 'court-of-ravenloft', match: [/^sydmore\b/i]},
+    dayus: {name: 'Dayus Manroe', campaign: 'court-of-ravenloft', match: [/^dayus\b/i]},
+    dracula: {name: 'Dracula', campaign: 'court-of-ravenloft', match: [/^dracula\b/i]},
+    lucian: {name: 'Lucian', campaign: 'court-of-ravenloft', match: [/^lucian\b/i]},
+    valintina: {name: 'Valintina', campaign: 'court-of-ravenloft', match: [/^valintina\b/i, /^valentina\b/i]},
+    juggernaut: {name: 'Juggernaut', campaign: 'court-of-ravenloft', match: [/^juggernaut\b/i]}
 };
  
-const FJ = 'fools-journey', JTE = 'journey-to-the-east', EE = 'espalian-escapades';
+const FJ = 'fools-journey', JTE = 'journey-to-the-east', EE = 'espalian-escapades', CR = 'court-of-ravenloft';
+const cr = f => 'court-of-ravenloft/' + f;
 const fj = f => 'fools-journey/' + f;
 const jte = f => 'journey-to-the-east/' + f;
  
 export const ENTRIES = [
     // ---------------- World installers (shared between campaigns) ----------------
-    {id: 'counterspell', title: 'Counterspell (Spell Duel + Subtle)', kind: 'world', file: fj('world/install-counterspell.js'), campaigns: [FJ, JTE], order: 10,
+    {id: 'counterspell', title: 'Counterspell (Spell Duel + Subtle)', kind: 'world', file: fj('world/install-counterspell.js'), campaigns: [FJ, JTE, CR], order: 10,
         v14: {file: fj('world/v14/install-counterspell.js')},
         does: 'Spell Duel Counterspell on every Counterspell in the world; Subtle Spell casts cannot be countered. Turn OFF Gambit\'s Counterspell.'},
-    {id: 'eldritch-blast', title: 'Eldritch Blast beam windows', kind: 'world', file: fj('world/install-eldritch-blast.js'), campaigns: [FJ], order: 11,
+    {id: 'eldritch-blast', title: 'Eldritch Blast beam windows', kind: 'world', file: fj('world/install-eldritch-blast.js'), campaigns: [FJ, CR], order: 11,
         v14: {file: fj('world/v14/install-eldritch-blast.js')},
         does: 'One dice window per beam for every Eldritch Blast caster. (v14: re-run after re-applying Eldritch Blast in the Medkit.)'},
-    {id: 'darkness-vision', title: 'Darkness & Devil\'s Sight', kind: 'world', file: fj('world/install-darkness-vision.js'), campaigns: [FJ, JTE], order: 12,
+    {id: 'darkness-vision', title: 'Darkness & Devil\'s Sight', kind: 'world', file: fj('world/install-darkness-vision.js'), campaigns: [FJ, JTE, CR], order: 12,
         v14: {file: fj('world/v14/install-darkness-vision.js')},
         does: 'Devil\'s Sight / shadow features see through magical darkness; Darkness blinds those who can\'t. Needs Vision 5e.'},
     {id: 'daylight-dispel', title: 'Daylight / Dawn dispel', kind: 'world', file: fj('world/install-daylight-dispel.js'), campaigns: [FJ, JTE], order: 13,
         v14: {file: fj('world/v14/install-daylight-dispel.js')},
         does: 'Daylight and Dawn remove overlapping Darkness of equal or lower level.'},
-    {id: 'lucky', title: 'Lucky (2024)', kind: 'world', file: fj('world/install-lucky.js'), campaigns: [FJ, JTE, EE], order: 14,
+    {id: 'lucky', title: 'Lucky (2024)', kind: 'world', file: fj('world/install-lucky.js'), campaigns: [FJ, JTE, EE, CR], order: 14,
         v14: {file: fj('world/v14/install-lucky.js')},
         does: '2024 Lucky for every character that has it.'},
     {id: 'life-bond', title: 'Life Bond (Find Steed)', kind: 'world', file: fj('world/install-life-bond.js'), campaigns: [FJ, JTE], order: 15,
         v14: {retired: 'Chris\'s Premades 2\'s 2024 Find Steed shares the healing itself (Life Bond). Apply Find Steed in the Medkit.'},
         does: 'The steed shares spell healing within 5 ft.'},
-    {id: 'war-caster', title: 'War Caster', kind: 'world', file: fj('world/install-war-caster.js'), campaigns: [FJ], order: 16,
+    {id: 'war-caster', title: 'War Caster', kind: 'world', file: fj('world/install-war-caster.js'), campaigns: [FJ, CR], order: 16,
         v14: {file: fj('world/v14/install-war-caster.js')},
         does: 'War Caster spells in Gambit\'s opportunity attack prompt.'},
     {id: 'hold-spells', title: 'Hold Person / Monster saves', kind: 'world', file: fj('world/fix-hold-spells.js'), campaigns: [FJ], order: 17,
@@ -179,7 +188,16 @@ export const ENTRIES = [
         does: 'Hemocraft DC, Crimson Rite, Bloated Agony, Shifting, Blood Maledict, Hybrid Transformation.'},
     {id: 'lyric-fixes', title: 'Lyric fixes', kind: 'character', file: 'espalian-escapades/lyric/install-lyric-fixes.js',
         v14: {file: 'espalian-escapades/lyric/v14/install-lyric-fixes.js'}, campaigns: [EE], actors: ['lyric'], order: 40,
-        does: 'Rename, Wild Shape, Starry Form, Fey Step, Trance, Absorb Elements. (v14: Wild Shape, Starry Form, Wild Companion and Absorb Elements are Chris\'s Premades 2; apply them in the Medkit first.)'}
+        does: 'Rename, Wild Shape, Starry Form, Fey Step, Trance, Absorb Elements. (v14: Wild Shape, Starry Form, Wild Companion and Absorb Elements are Chris\'s Premades 2; apply them in the Medkit first.)'},
+
+    // ---------------- Court of Ravenloft (v13 only: Chris's Premades 2 has no Illrigger) ----------------
+    {id: 'illrigger-engine', title: 'Illrigger engine (seals)', kind: 'world', file: cr('world/install-illrigger-engine.js'), campaigns: [CR], order: 20,
+        actors: ['sydmore', 'dayus', 'dracula', 'lucian', 'valintina'], allAtOnce: true,
+        does: 'Nix Fix runs Baleful Interdict for the Court: one GM dialog per event (place a seal on a hit, or burn with boons), any damage source can burn, per-owner dice and range, only burned seals removed. Re-run after re-applying Baleful Interdict, Deathstrike or Soul\'s Doom in the Medkit.'},
+    {id: 'dracula-boss', title: 'Dracula: boss kit', kind: 'character', file: cr('dracula/install-dracula-boss.js'), campaigns: [CR], actors: ['dracula'], order: 40,
+        does: 'Legendary Actions 4 / 5 in his lair (Seal, Strike, By the Throat, Devour), Regeneration (20, stopped by 15 radiant), Infernal Conduit Devour as his bite (Bonus / Legendary 2), Infernal Ascension mythic phase + Hellfire Detonation, Blood Price / Legendary Resistance prompt (bleed scales with spell level), unlimited seals, Dispater\'s Interdiction and Invoke Hell as Chris\'s Premades items, Grand Strategist / Punishment / You Die on My Command! / Devastator 1/day, Inexorable passive, Terrorizing Force, Feral Instinct. Apply the Illrigger engine first.'},
+    {id: 'dracula-bloodrift', title: 'Dracula: Bloodrift', kind: 'character', file: cr('dracula/install-bloodrift.js'), campaigns: [CR], actors: ['dracula'], order: 41,
+        does: 'Bloodrift replaces the Blood Moon Blade: Blood Gauge, three forms, Bloodlash, Red Mist, Ravenous Strikes, Bloodseeker / Hunted, Bloody Arc, Unleashing the Madness, The Hunger Within, Death Wish.'}
 ];
  
 // Run order inside a campaign: world installers first, then each character in table order.

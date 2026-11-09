@@ -33,3 +33,10 @@ button.nix-module-open { margin-top: 0.4rem; width: 100%; }
 .nix-module .nix-table td:last-child button { display: block; width: 100%; white-space: nowrap; }
 .nix-module .nix-table td:last-child button + button { margin-top: 0.25rem; }
 .nix-module button.nix-revert { font-size: 0.85em; }
+
+/* Court of Ravenloft: Illrigger seal dialog */
+.nix-illrigger table { width: 100%; border-collapse: collapse; }
+.nix-illrigger td { padding: 4px 6px; vertical-align: top; border-bottom: 1px solid var(--color-border-light-2, #8884); }
+.nix-illrigger td small { opacity: 0.75; }
+.nix-illrigger .nix-ill-extra label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.nix-illrigger select { width: auto; }

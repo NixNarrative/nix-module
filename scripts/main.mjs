@@ -1,7 +1,7 @@
 // =====================================================================
 //  NIX FIX (module id: nix-module)
-//  Nix's homebrew automations for The Fool's Journey, Journey to the East
-//  and Espalian Escapades, kept in one place:
+//  Nix's homebrew automations for The Fool's Journey, Journey to the East,
+//  Espalian Escapades and the Court of Ravenloft, kept in one place:
 //   - every table-tested installer and embedded macro ships in automations/
 //   - the GM applies them from one window, per world, without selecting tokens
 //   - when the module updates, the GM is told which automations changed
@@ -21,6 +21,9 @@ import {NixPanel, applyAll} from './panel.mjs';
 import {revertEntry, revertChain, undoIndex} from './undo.mjs';
 import {registerPlayerSettings, restorePlayerSettings, playerSettingsReport, clearPlayerSettings} from './player-settings.mjs';
 import {registerSidebarCollapse} from './sidebar-collapse.mjs';
+import {registerIllrigger} from './court/illrigger.mjs';
+import {registerBloodrift} from './court/bloodrift.mjs';
+import {registerBoss} from './court/boss.mjs';
  
 let panel;
 const open = () => (panel ??= new NixPanel()).render({force: true});
@@ -67,6 +70,16 @@ Hooks.on('renderSettings', (app, html) => {
     target.append(btn);
 });
  
+// Court of Ravenloft runtime (Illrigger engine, Bloodrift, Dracula's boss kit). v13 / Chris's Premades 1 only;
+// each part acts only on actors and items its installer marked.
+Hooks.once('ready', () => {
+    if (detectEngine().id !== 'cpr1') return;
+    const api = game.modules.get(MODULE_ID).api;
+    api.illrigger = registerIllrigger();
+    api.bloodrift = registerBloodrift();
+    api.boss = registerBoss();
+});
+
 Hooks.once('ready', async () => {
     if (!game.user.isGM) return;
     if (game.users.activeGM && game.users.activeGM.id !== game.user.id) return;   // one GM does the checks
