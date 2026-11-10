@@ -24,6 +24,8 @@ import {registerSidebarCollapse} from './sidebar-collapse.mjs';
 import {registerIllrigger} from './court/illrigger.mjs';
 import {registerBloodrift} from './court/bloodrift.mjs';
 import {registerBoss} from './court/boss.mjs';
+import {registerLieutenants} from './court/lieutenants.mjs';
+import {registerPetraSpells} from './court/petra-spells.mjs';
  
 let panel;
 const open = () => (panel ??= new NixPanel()).render({force: true});
@@ -78,6 +80,8 @@ Hooks.once('ready', () => {
     api.illrigger = registerIllrigger();
     api.bloodrift = registerBloodrift();
     api.boss = registerBoss();
+    api.court = registerLieutenants();
+    api.petraSpells = registerPetraSpells();
 });
 
 Hooks.once('ready', async () => {

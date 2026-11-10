@@ -62,6 +62,28 @@ Runtime (active GM):
 - Hooks: preUseActivity gates; preamble: transient necrotic `idr`; postWaitForAttackRoll: Bloodseeker bonus, Greatsword -5; damage: Hunted (bonus x d4/d6 necrotic); preTargetDamageApplication: necrotic immunity -> half, necrotic dealt to living creatures counted; rollFinished: Gauge gain (not in Greatsword), Bloodseeker update, Ravenous Strikes (1/turn, target dialog); postAttackRollComplete (any client): Bloodlash on a melee miss (owner's dialog via CPR); updateCombat (GM): end of previous turn clears Bloodseeker on creatures not attacked, 1-minute Greatsword limit, decay (-3/-5), Death Wish, The Hunger Within save and Mad effect (no damage line for a necrotic-immune wielder); preUpdateItem: players can't unattune.
 - Not automated: Bloodsight (text on the Mastery effect), Ending Attunement attempt, Trial by Blood (theater of the mind, not tracked), "can't attack -> half Gauge necrotic" (told in chat), Unleashing's 1/2 on save handled by the activity.
 
+### Petra: `world/install-sorcerer-core.js` + `petra/install-petra-fixes.js` (built 2026-11-09, needs table test)
+Apply in order: Petra: Metamagic fix-up, Sorcerer core (2024), Petra fixes. CPR embedded macros (v13), like Bangiras.
+- Sorcerer core: each Metamagic option item gets one "Metamagic" macro (Midi Item / rollFinished / 50) that primes an effect and casts the picked spell (`H.cast`: a primed Distant stretches the range first). Primed identifiers: nixCarefulPrimed, nixDistantPrimed, nixEmpoweredPrimed, nixExtendedPrimed, heightenedSpellPrimed, quickenedSpellPrimed, nixTransmutedPrimed, twinnedSpellPrimed. Sorcery Incarnate combiner on Sorcery Points (Midi Actor / rollFinished / 20; actor flag `world.nixMetamagicPrimeOnly` while priming the second). Careful puts a short effect on each protected creature (save bonus lifts the roll to the DC; targetApplyDamage negates half-on-save damage; removed at the spell's rollFinished). Distant writes `flags.world.nixDistantRestore` on the spell until the cast ends (the installer puts back leftovers). Every macro carries its helpers (`H.wrap`: named function `nixSorcerer`).
+- Petra fixes: Umbral Form offer on Innate Sorcery (rollFinished / 70) and on the Umbral Form item; effect `nixUmbralForm` depends on the Innate Sorcery effect. Strength of the Grave on Power of Shadow (targetApplyDamage / 245; flag `world.nixGraveUsed`, reset on long rest). Beasts of Ill Omen (preambleComplete / 50): tokens named "Bestial Spirit" / "Ill Omen" (or flag `world.nixIllOmen`) of her disposition; temporary `flags.midi-qol.disadvantage.ability.save.all` on enemies within 5 ft. Shadow Walk: `chrisPremades.Teleport.target` 120 ft, Westly's light check.
+- Not automated: repeat saves for Careful / Ill Omen (initial save only), incorporeal damage inside objects, Metamagic Adept's "points only for Metamagic".
+
+### Petra's spells: `court/petra-spells.mjs` + "Petra: spells" (built 2026-11-09, needs table test)
+Installer marks the spells (`flags.nix-module.petraSpell` {kind: wallOfDeath | negativeFlood | fingerOfDeath | prismaticWall, ...}); activities flagged `wall` / `ring` / `globe` / `layer`. Walls live on the template: `flags.nix-module.petraWall` {kind: death | prism, caster, side, formula, type, ability, dc, tickSave, reach | dice, allowed, layers}; caster effect `flags.nix-module.petraWallTemplate` (delete = wall ends). Turn and movement checks on the active GM (`updateCombat`, `updateToken` with a position cache); saves and damage are CPR synthetic workflows from Petra (players get normal save prompts).
+- Wall of Death: tick save read from the sentence about ending a turn (MCDM text: no save). Concentration: the caster effect is a dependent of her concentration.
+- Sorcerous Burst: `midi-qol.premades.preDamageRollComplete` adds one 1d8 DamageRoll per burst (same type), cap = spellcasting mod; runs before Empowered (CPR damageRollComplete).
+- Zombies: `pending` on the spell item; checked at her next turn start (or at once outside combat). "Killed" = NPC at 0 HP, `dead` status, or 3 failed death saves.
+- Prismatic Wall: "allowed" = tokens with her disposition at cast. Walls (move none, sight normal, light none) and an AmbientLight flagged `petraWall: <template id>`, removed with the template.
+- Not automated: Prismatic Wall's "reaching into" the wall, damage-based layer destruction (use the activity), "wall in a creature's space" (GM told), Indigo/Violet when the target isn't on the current scene; Wall of Death damaging both sides (ask if her text says so).
+
+### Lieutenants, character + boss: `lieutenants.mjs` + "<Name>: fixes" + "<Name> (Boss): boss kit" (built 2026-11-09, needs table test)
+Two actors each: the character (e.g. "Dayus Manroe") and a duplicate named "<Name> (Boss)" (registry keys `dayus` / `dayus-boss`; names containing "boss" bind to the boss key only). Order: Illrigger engine (both), fixes (both: subclass features + feats, RAW resources), boss kit (Boss copy only: Legendary Actions, Legendary Resistance, Invoke Hell 1/day; refuses to run before the fixes).
+Boss kit flags: Shared with Dracula's runtime (boss.mjs): `flags.nix-module.boss` {legendaryBase 3, legendaryLair 3, regen false, phase2 false, paidSeals true, strikeItem}. Own flags `flags.nix-module.court` {key, piercer, slowWeapons, haemal, haemalDamage, sanguineGift, bloodstroke, bloodstrokeType, spellbreaker, submit, charmEnemy, intransigent, slipperyPloy}; activity kinds `flags.nix-module.court` (veil, interchange, blessing, regainSeals, regainSlots, enervating, cantrip, bewitch, deal, quid, none).
+- Installers generated: `node tools/court-boss-build/build.js <nix-module>` (fixes-core.js + boss-core.js + bodies.js; Blood Price macro copied from Dracula's installer, Sentinel from Quez's). Re-run the build after editing either.
+- Socket `module.nix-module` {nix: 'court'}: spendSeals, placeSeal, burn, removeSeals, save, reaction, effect, deleteEffect, update. Hooks run on the workflow's client; questions go to the active GM.
+- Choices made (change on request): seals keep their pools (only Dracula unlimited); "burn" deals damage for Haemal Exchange and Submit (RAW: no "no damage" line), not for Spellbreaker; Foul Interchange may target the user himself; Bloodstroke type necrotic; Legendary Resistance 3/day; Sutekh's Blessing ignores constructs, elementals, oozes, plants, undead.
+- Not automated: Haemal Exchange on saves rolled outside Midi; counter-chains against Spellbreaker; Let's Make a Deal's "can't be cancelled by advantage"; Spellblade (activity only); Sutekh's Blessing barriers; Quid Pro Quo devil's initiative (added to combat, roll it).
+
 ## Table test (v13 Barovia world)
 1. Nix Fix window: campaign Court of Ravenloft; bind the actors; Apply: Illrigger engine, then Dracula: boss kit, then Dracula: Bloodrift. Read each whisper.
 2. Dracula hits a fresh creature with Bloodrift: one dialog, "Place a seal" ticked. Hit again the same turn: no dialog (once per turn) unless another Illrigger has seals there.
@@ -77,6 +99,29 @@ Runtime (active GM):
 7e. Devastator: 1/day. Inexorable: no button; a save with 2 enemies adjacent gets +2.
 8. Bloodrift: damage a living creature with necrotic until 30 -> Longsword Form; Bloodseeker +1/+2/+3 and Hunted; 70 -> Greatsword Form; each attack -5; Bloody Arc; Unleashing; turn-start decay and Hunger save at 50+.
 9. A player misses Dracula in melee: Bloodlash prompt to the GM.
+
+10. Petra: Apply Petra: Metamagic fix-up, Sorcerer core (2024), Petra fixes. Read the whispers (every option shows its SP cost; Strength of the Grave 2014 and the extra Summon Beast deleted).
+11. Petra Careful: target Dracula and two heroes, click Careful Spell, pick Fireball: Dracula auto-succeeds and takes 0; the heroes save normally.
+12. Petra Empowered: click it, then cast Blight: chat lists the rerolled dice. Click it and delete the effect: point refunded.
+13. Petra Distant: Finger of Death shows 120 ft while casting, 60 ft after. Transmuted: Fireball asks for the new type at the damage roll. Extended: Greater Invisibility lasts 2 minutes.
+14. Petra Innate Sorcery: Umbral Form prompt (free use / 6 SP); resistances on her sheet; ends with Innate Sorcery. With Innate on, Heightened offers a second option (Sorcery Incarnate). Out of Innate uses: the "2 Sorcery Points" activity.
+15. Petra at 0 HP from 30 damage: Cha save DC 35; success = 24 HP and a chat line; a second time before a long rest: nothing.
+16. Petra Beasts of Ill Omen: Bestial Spirit next to a hero, Fireball the hero: "Beast of Ill Omen" effect, disadvantage on the save.
+17. Petra Shadow Walk: teleport picker, 120 ft.
+
+17a. Petra: Apply Petra: spells. Whisper: Wall of Death size/save/damage and "no save" for the ongoing damage; Prismatic Wall 12d6.
+17b. Wall of Death: cast, place the wall between her and two heroes: Con saves; pick a side. A hero ends its turn within 10 ft on that side: damage card, no save. Other side: nothing. Walk a hero through: damage once that turn. Drop concentration: template gone.
+17c. Wall of Death (ring) around a hero standing on the ring and one in the middle: only the one on the ring saves.
+17d. Negative Energy Flood on a vampire spawn: no save, temp HP = half the roll. On an NPC that drops to 0: at her next turn start, confirm: Zombie (<name>) appears on the corpse, corpse hidden, zombie in combat.
+17e. Prismatic Wall: Dracula on her side walks through: nothing. A hero walks through: up to 7 Dex saves; failing Indigo = Restrained, end-of-turn Con saves; failing Violet = Blinded, Wis save at her next turn. A hero steps within 20 ft: Con save or Blinded. Fire Bolt across the wall: stopped (indigo). Destroy a layer / end: red goes first; End removes walls and light.
+
+17f. Sorcerous Burst: hit with it until a d8 shows 8: an extra 1d8 roll (manual prompt), chain on another 8, chat line with the dice; never more than 6 extra (Cha +6).
+18. Lieutenants: duplicate each and rename the copy "<Name> (Boss)"; in the Nix Fix window check both bind. Apply the Illrigger engine, each fixes (whisper per actor: feats list, anything "not found"), then each boss kit. The character sheets get no Legendary Actions and keep shared Invoke Hell.
+19. Legendary Actions show 3 on each Boss copy; Seal (1) spends a seal (6 -> 5); Strike uses the weapon named in the whisper.
+20. Dayus: first attack on his turn vs a sealed creature has advantage; melee hit with advantage adds 5d4 (6d4 in dim light). Veil of Lies: seal spent, invisible, ends on his next attack.
+21. Sydmore: a PC with his seal attacks and hits by 1-7: Haemal prompt; -1d8, seal burns, ally effect +1d8. Foul Interchange on a poisoned ally passes poisoned to a PC on a failed Con save; it ends at the end of his next turn. Heal an ally within 30 ft: Sanguine Gift prompt. Exsanguinate an ally, hit it in melee: attacker takes 15 necrotic.
+22. Valintina: a sealed PC casts a spell within 60 ft: Spellbreaker prompt, Spell Duel. She casts a save spell on a creature with 2+ seals: Submit dialog. Arm Enervating Spell, cast a damaging spell: targets vulnerable. Vile Transmogrification both ways.
+23. Lucian: Bonus Action seal on a Humanoid: Charm Enemy dialog. Charm an ally within 10 ft of him: blocked. A PC attacks him: Slippery Ploy prompt; fail -> pick a new target or lose it. Quid Pro Quo: token hidden, devil appears; save success at turn end brings it back and removes the devil. Cha check with a low d20: Red Cant prompt.
 
 ## Watch-outs
 - Re-run the Illrigger engine after re-applying Baleful Interdict, Deathstrike or Soul's Doom in the Medkit; re-run the boss kit after re-applying any Dispater's / Invoke Hell / boon item (CPR's "created/medkit" macros point consumption back to seals).

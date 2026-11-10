@@ -279,6 +279,7 @@ async function runBoons(row, dealt, type) {
         if (ally?.actor) {
             const cur = ally.actor.system.attributes.hp.temp ?? 0;
             if (dealt > cur) await ally.actor.update({'system.attributes.hp.temp': dealt});
+            Hooks.callAll('nixExsanguinate', owner, ally, dealt);
             await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: owner}),
                 content: '<b>Exsanguinate:</b> ' + esc(ally.document.name) + ' gains ' + dealt + ' temporary hit points' + (dealt > cur ? '' : ' (already had ' + cur + ')') + '.'});
         }

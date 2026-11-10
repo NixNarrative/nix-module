@@ -56,8 +56,9 @@ async function onRollFinished(workflow) {
     try {
         if (kind === 'seal') {
             if (!target) return ui.notifications.warn('Legendary Seal: target a creature first.');
-            const n = await placeSeal(actor, target, 1, {free: true});
-            if (n) await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: '<b>Legendary Action:</b> ' + esc(actor.name) + ' seals ' + esc(target.document.name) + '.'});
+            const n = await placeSeal(actor, target, 1, {free: !bossOf(actor)?.paidSeals});
+            if (!n) return ui.notifications.warn('Legendary Seal: no seals left.');
+            await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: '<b>Legendary Action:</b> ' + esc(actor.name) + ' seals ' + esc(target.document.name) + '.'});
         } else if (kind === 'throat') {
             if (!target) return ui.notifications.warn('By the Throat: target a creature first.');
             await placeSeal(actor, target, 1, {free: true});
@@ -66,7 +67,7 @@ async function onRollFinished(workflow) {
         } else if (kind === 'strike') {
             if (!target) return ui.notifications.warn('Legendary Strike: target a creature first.');
             const weapons = actor.items.filter(i => i.type === 'weapon' && i.system.equipped);
-            const w = weapons.find(i => i.flags?.[MODULE_ID]?.bloodrift) ?? weapons[0];
+            const w = weapons.find(i => i.flags?.[MODULE_ID]?.bloodrift) ?? weapons.find(i => i.id === bossOf(actor)?.strikeItem) ?? weapons[0];
             const act = w?.system.activities.find(a => a.type === 'attack');
             if (!act) return ui.notifications.warn('Legendary Strike: no equipped weapon.');
             setTimeout(() => cpr().workflowUtils.syntheticActivityRoll(act, [target]), 300);
@@ -117,7 +118,7 @@ export async function startOfTurn(actor, scene) {
     }
     if (hp.value <= 0 || hp.value >= hp.max) return;
     const gain = Math.min(amount, hp.max - hp.value);
-    await actor.update({'system.attributes.hp.value': hp.value + gain});
+    await actor.update({'system.attributes.hp.value': hp.value + gain}, {nixRegen: true});
     await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}),
         content: '<b>Regeneration:</b> ' + esc(actor.name) + ' regains ' + gain + ' hit points' + (radiant ? ' (' + radiant + ' radiant taken, under ' + stop + ')' : '') + '.'});
 }
