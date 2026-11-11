@@ -37,6 +37,9 @@ export function hash(str) {
 export const isRetired = (entry, engine = detectEngine()) => engine.id === 'cat' && !!entry.v14?.retired;
 // Is this entry available on this engine?
 export const isPorted = (entry, engine = detectEngine()) => engine.id !== 'cat' || (!!entry.v14?.file && !entry.v14?.retired);
+// Who this entry runs on, on this engine. v14.actors overrides (the v14 sheets are the boss
+// versions, so a lieutenant's boss kit runs on the lieutenant there, not on a "(Boss)" copy).
+export const actorsOf = (entry, engine = detectEngine()) => (engine.id === 'cat' && entry.v14?.actors) || entry.actors || [];
 // Which file this entry runs on this engine.
 export const fileFor = (entry, engine = detectEngine()) => engine.id === 'cat' ? entry.v14?.file : entry.file;
  
@@ -240,12 +243,13 @@ export async function runEntry(entry, {silent = false} = {}) {
  
     // Who it runs on.
     const actors = [];
-    for (const key of entry.actors ?? []) {
+    const keys = actorsOf(entry, engine);
+    for (const key of keys) {
         const {actor, how} = actorFor(key);
         if (actor) actors.push(actor);
         else if (!entry.allAtOnce) return {ok: false, msg: 'Pick the actor for ' + (CHARACTERS[key]?.name ?? key) + ' first (' + how + ').'};
     }
-    if (entry.actors?.length && !actors.length) return {ok: false, msg: 'None of its characters are in this world.'};
+    if (keys.length && !actors.length) return {ok: false, msg: 'None of its characters are in this world.'};
  
     // Record what it changes, so it can be reverted from the panel.
     const prevApplied = getApplied()[entry.id];
@@ -256,7 +260,7 @@ export async function runEntry(entry, {silent = false} = {}) {
             const r = await installEmbedded(entry, actors[0], code, engine);
             if (!r.ok) early = r;
             else extra = ' ' + r.msg;
-        } else if (entry.allAtOnce || !entry.actors?.length) {
+        } else if (entry.allAtOnce || !keys.length) {
             await execute(code, actors);
         } else {
             for (const actor of actors) await execute(code, [actor]);
@@ -294,7 +298,7 @@ export async function statusOf(entry) {
     // A world copied from v13 carries v13 records: those must be re-applied with the v14 files.
     if ((rec.engine ?? 'cpr1') !== engine.id) return {state: 'outdated', rec, why: 'last applied with the ' + ((rec.engine ?? 'cpr1') === 'cat' ? 'v14' : 'v13') + ' engine'};
     if (rec.hash !== current) return {state: 'outdated', rec};
-    const actorsChanged = (entry.actors ?? []).some(k => {
+    const actorsChanged = actorsOf(entry, engine).some(k => {
         const a = actorFor(k).actor;
         return a && !rec.actors?.includes(a.uuid);
     });

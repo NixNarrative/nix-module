@@ -42,7 +42,7 @@ The v14 Chris's Premades is a rewrite: Chris's Premades 2 runs on **Coven's Auto
 
 So the module has two engines and picks one per world:
 - **v13 (Chris's Premades 1):** everything, as table-tested.
-- **v14 (Chris's Premades 2 + CAT):** automations with a v14 copy run (world installers and Bangiras so far; the rest of the characters are in progress). Others show **Not ported to v14 yet**; ones Chris's Premades 2 does itself show **Retired on v14** with the reason. Both are greyed out and skipped by Apply all. Embedded macros are written in CAT's format, and the dead v13 copy on the same item is removed. Espalian Escapades stays v13 only.
+- **v14 (Chris's Premades 2 + CAT):** automations with a v14 copy run (each campaign's port is written up in `docs/V14-PORT-*.md`; the Court of Ravenloft since 1.7.0). Others show **Not ported to v14 yet**; ones Chris's Premades 2 does itself show **Retired on v14** with the reason. Both are greyed out and skipped by Apply all. Embedded macros are written in CAT's format, and the dead v13 copy on the same item is removed.
 
 The module's own code uses only ApplicationV2 / DialogV2 and other APIs present in v13 and v14. The health check, version report and settings export/import work on both, so you can compare a v14 copy of a world against the v13 original. A world copied from v13 shows its applied automations as updates on v14 (they were applied with the v13 files).
 

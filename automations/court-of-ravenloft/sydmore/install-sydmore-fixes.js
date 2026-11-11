@@ -110,6 +110,19 @@ async function fixOne(actor) {
         + ' damage (change flags.nix-module.court.bloodstrokeType to cold or fire).');
     if (court.haemal) report.push('Haemal Exchange (reaction, 60 ft): offered when a creature carrying his seal rolls an attack that hits by less than 8, or is about to save. Burns the seal (damage), it subtracts 1d8, an ally within 30 ft gets +1d8 on its next attack or save.');
     report.push('Exsanguinate: engine (temp HP to an ally when he burns seals on a living creature).');
+    // Unarmed Strike: his main attack, 1d8 bludgeoning (+ his ability modifier, added by dnd5e). Terrorizing Force
+    // counts it (an unarmed strike is a melee weapon attack), so its extra damage lands on it too.
+    {
+        const us = actor.items.find(i => i.type === 'weapon' && (i.system.type?.value === 'unarmed' || /^unarmed strike/i.test(i.name)));
+        if (us) {
+            const b = us.system.damage?.base ?? {};
+            const types = Array.from(b.types ?? []);
+            if (!(b.number === 1 && b.denomination === 8 && !b.custom?.enabled && !b.bonus))
+                await us.update({'system.damage.base.number': 1, 'system.damage.base.denomination': 8, 'system.damage.base.bonus': '',
+                    'system.damage.base.custom.enabled': false, 'system.damage.base.types': types.length ? types : ['bludgeoning']});
+            report.push('Unarmed Strike: 1d8 ' + (types[0] ?? 'bludgeoning') + ' + his modifier (his main attack; his Strike (2) Legendary Action too). Terrorizing Force adds to it.');
+        } else report.push('<b>Unarmed Strike not found.</b>');
+    }
     const ar = find(null, /^adrenaline rush/i), re = find(null, /^relentless endurance/i);
     report.push('Orc: ' + [ar && 'Adrenaline Rush (' + (ar.system.uses?.max ?? '?') + '/SR)', re && 'Relentless Endurance' + (ident(re) ? ' (Chris\'s Premades)' : ' (sheet only: drop him to 1 HP yourself once per long rest)')].filter(Boolean).join(', ') + '.');
 

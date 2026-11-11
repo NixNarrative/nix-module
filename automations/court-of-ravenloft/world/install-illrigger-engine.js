@@ -8,7 +8,7 @@
 //     seal effect, and on seals already on creatures), and Deathstrike's own prompt
 //     (Deathstrike is a checkbox in the hit dialog now).
 //   - Soul's Doom: the engine adds it to every kind of damage, so CPR's attack-only
-//     bonus is switched off (no double count).
+//     bonus is switched off (no double count). Its effect lasts 1 minute on the target.
 //   - Records each Illrigger's range (Unfettered 60 ft), seal dice and passives.
 // =====================================================================
 const MOD = 'nix-module';
@@ -59,6 +59,8 @@ for (const actor of actors) {
     if (sd) for (const e of sd.effects) {
         const keep = e.changes.filter(c => !/grants\.bonus\.damage/.test(c.key));
         if (keep.length !== e.changes.length) { await e.update({changes: keep}); notes.push('Soul\'s Doom: now adds its bonus to every kind of damage (Nix Fix).'); }
+        // Lasts 1 minute on the target (Nix, 1.7.0).
+        if (!e.transfer && Number(e.duration?.seconds) !== 60) { await e.update({'duration.seconds': 60}); notes.push('Soul\'s Doom: lasts 1 minute.'); }
     }
 
     // 4. Configuration.

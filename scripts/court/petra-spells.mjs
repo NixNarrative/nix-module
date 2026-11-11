@@ -1,6 +1,11 @@
 // =====================================================================
-//  NIX FIX: Petra's spells (Court of Ravenloft, v13 / Midi QOL / Chris's Premades 1)
+//  NIX FIX: Petra's spells (Court of Ravenloft). v13 (Midi QOL / Chris's Premades 1) and
+//  v14 (CAT): helpers go through engine.mjs. v13 walls live on MeasuredTemplates; on v14
+//  dnd5e places Regions instead (a wall is a Region "line" shape: origin, rotation, length),
+//  and the wall state lives on the Region the same way. Same rules on both.
 //  Acts only on spells the "Petra: spells" installer marked (flags.nix-module.petraSpell).
+//  v14: steps aside on a spell that carries Chris's Premades 2's own automation again
+//  (re-applied in the Medkit to try theirs), so the two never both run.
 //
 //  Wall of Death (MCDM homebrew): the spell's own save activity does the first save.
 //    The wall remembers its damaging side; a creature that ends its turn inside the
@@ -24,12 +29,16 @@
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {isActiveGM} from './illrigger.mjs';
 import {gm} from './lieutenants.mjs';
+import {cpr, fxAll, HOOKS, isCat} from './engine.mjs';
 
 export const FLAG = 'petraSpell';
 const WALL = 'petraWall';
-const cpr = () => globalThis.chrisPremades?.utils;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const cfgOf = item => item?.flags?.[MODULE_ID]?.[FLAG] ?? null;
+// Chris's Premades 2 automates Wall of Death / Prismatic Wall itself on v14 (flags.cat.macros).
+// Re-applied there to try theirs, ours stays out of it.
+export const cpr2Owns = item => Object.values(item?.flags?.cat?.macros ?? {}).flat()
+    .some(m => m?.source === 'chris-premades' && /wall-of-death|prismatic-wall/.test(m?.identifier ?? ''));
+const cfgOf = item => cpr2Owns(item) ? null : (item?.flags?.[MODULE_ID]?.[FLAG] ?? null);
 const kindOf = item => cfgOf(item)?.kind ?? null;
 const actKind = act => act?.flags?.[MODULE_ID]?.[FLAG] ?? null;
 const inCombat = () => !!game.combat?.started;
@@ -82,6 +91,21 @@ export function inDeathZone(p, rad, s, side, reach) {
     if (d > rad + reach) return false;
     return sideOf(p, s) === side;
 }
+// v14 Region shape (px): line = origin + rotation (degrees) + length; circle / ring / emanation = centre + radius.
+export function regionShape(sh) {
+    if (!sh) return null;
+    if (sh.type === 'line' || sh.type === 'cone') {
+        const th = Number(sh.rotation ?? 0) * Math.PI / 180, len = Number(sh.type === 'line' ? sh.length : sh.radius) || 0;
+        const a = {x: Number(sh.x), y: Number(sh.y)};
+        return {type: 'line', a, b: {x: a.x + Math.cos(th) * len, y: a.y + Math.sin(th) * len}};
+    }
+    if (sh.type === 'emanation') return regionShape({...sh, type: 'circle', x: sh.base?.x ?? sh.x, y: sh.base?.y ?? sh.y});
+    if (sh.type === 'rectangle') {
+        const w = Number(sh.width) || 0, h = Number(sh.height) || 0;
+        return {type: 'circle', c: {x: Number(sh.x) + w / 2, y: Number(sh.y) + h / 2}, r: Math.max(w, h) / 2};
+    }
+    return {type: 'circle', c: {x: Number(sh.x), y: Number(sh.y)}, r: Number(sh.radius) || 0};
+}
 export const midpoint = s => s.type === 'circle' ? {...s.c} : {x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2};
 
 // ---------------------------------------------------------------- canvas helpers
@@ -90,12 +114,36 @@ const gridOf = () => ({size: canvas.dimensions.size, distance: canvas.dimensions
 const centerOf = doc => ({x: doc.x + (doc.width ?? 1) * canvas.dimensions.size / 2, y: doc.y + (doc.height ?? 1) * canvas.dimensions.size / 2});
 const radiusOf = doc => Math.max(doc.width ?? 1, doc.height ?? 1) * canvas.dimensions.size / 2;
 const wallState = tpl => tpl?.flags?.[MODULE_ID]?.[WALL] ?? null;
-const walls = (kind, scene = canvas.scene) => (scene?.templates ?? []).filter(t => wallState(t)?.kind === kind);
+// The documents a wall can live on: MeasuredTemplates (v13) or Regions (v14).
+const areas = scene => (isCat() ? scene?.regions : scene?.templates) ?? [];
+const areaAlive = doc => !!doc && !!areas(doc.parent)?.get?.(doc.id);
+const walls = (kind, scene = canvas.scene) => Array.from(areas(scene)).filter(t => wallState(t)?.kind === kind);
+// A wall's geometry in px, from a template or a Region.
+const geom = doc => Array.isArray(doc?.shapes) || doc?.shapes?.length !== undefined
+    ? regionShape(doc.shapes[0] ?? doc.shapes.contents?.[0]) : shapeOf(doc, gridOf());
 const casterOf = st => { try { return fromUuidSync(st.caster); } catch { return null; } };
 const tokenOfActor = actor => actor?.token?.object ?? actor?.getActiveTokens?.()[0] ?? null;
 const alive = doc => (doc?.actor?.system?.attributes?.hp?.value ?? 1) > 0;
 
+// v14: the Region dnd5e placed for this activity (dnd5e.postCreateMeasuredTemplate hands it over).
+const placed = new Map();   // activity uuid -> RegionDocument
+function onRegionsPlaced(activity, created) {
+    const r = Array.from(created ?? []).at(-1);
+    if (activity?.uuid && r) placed.set(activity.uuid, r);
+}
+async function regionOf(wf) {
+    const uuid = wf.activity?.uuid;
+    for (let i = 0; i < 15; i++) {
+        let r = wf.template?.document ?? wf.template;
+        if (!r?.shapes && wf.templateUuids?.length) r = fromUuidSync(wf.templateUuids.at(-1));
+        if (!r?.shapes && uuid) r = placed.get(uuid) ?? Array.from(canvas.scene?.regions ?? []).filter(x => x.flags?.dnd5e?.activity === uuid).at(-1);
+        if (r?.shapes && areaAlive(r)) { if (uuid) placed.delete(uuid); return r; }
+        await sleep(200);
+    }
+    return null;
+}
 async function templateOf(wf) {
+    if (isCat()) return regionOf(wf);
     let t = wf.template;
     for (let i = 0; i < 15 && !t; i++) {
         await sleep(200);
@@ -128,7 +176,7 @@ async function hurt(caster, tokens, {name, img, formula, type, ability, dc, onSa
     }
 }
 async function addEffect(actor, data) {
-    if (actor.isOwner) return (await actor.createEmbeddedDocuments('ActiveEffect', [data]))?.[0]?.id ?? null;
+    if (actor.isOwner) return (await actor.createEmbeddedDocuments('ActiveEffect', fxAll([data])))?.[0]?.id ?? null;
     return gm('effect', {actor: actor.uuid, data});
 }
 const dcOf = (caster, item) => Number(item?.system?.activities?.find?.(a => a.save?.dc?.value)?.save.dc.value
@@ -141,7 +189,7 @@ async function onPreamble(wf) {
         const kind = kindOf(wf.item);
         if (kind === 'wallOfDeath' && actKind(wf.activity) === 'ring') return await ringTargets(wf);
         if (kind === 'negativeFlood') return await floodSplit(wf);
-        if (wf.targets?.size && canvas.scene?.templates.some(t => wallState(t)?.kind === 'prism')) return await prismBlock(wf);
+        if (wf.targets?.size && walls('prism').length) return await prismBlock(wf);
     } catch (err) { console.error(TITLE + ' | Petra spells preamble', err); }
 }
 
@@ -149,7 +197,7 @@ async function onPreamble(wf) {
 async function ringTargets(wf) {
     const tpl = await templateOf(wf);
     if (!tpl) return;
-    const s = shapeOf(tpl, gridOf());
+    const s = geom(tpl);
     const keep = Array.from(wf.targets ?? []).filter(t => distTo(centerOf(t.document), s) <= radiusOf(t.document) + pxft() * 0.5);
     await setTargets(wf, keep);
 }
@@ -177,7 +225,7 @@ async function prismBlock(wf) {
         if (t.id === me.id) return true;
         for (const tpl of walls('prism')) {
             const st = wallState(tpl);
-            if (!crosses(from, t.center, shapeOf(tpl, gridOf()))) continue;
+            if (!crosses(from, t.center, geom(tpl))) continue;
             const layers = st.layers ?? [];
             const by = isSpell && layers.includes('indigo') ? 'indigo (spells can\'t be cast through it)'
                 : ranged && !magical && layers.includes('red') ? 'red (nonmagical ranged attacks can\'t pass)'
@@ -219,9 +267,9 @@ function castFormula(wf) {
 
 async function castDeath(wf) {
     const tpl = await templateOf(wf);
-    if (!tpl) return gmWhisper('<b>Wall of Death</b>: no template was placed, so the wall isn\'t tracked. Cast it again with a template.');
+    if (!tpl) return gmWhisper('<b>Wall of Death</b>: no ' + (isCat() ? 'area (Region)' : 'template') + ' was placed, so the wall isn\'t tracked. Cast it again and place the wall.');
     const cfg = cfgOf(wf.item);
-    const s = shapeOf(tpl, gridOf());
+    const s = geom(tpl);
     const labels = sideLabels(s);
     const {formula, type} = castFormula(wf);
     if (!formula) return gmWhisper('<b>Wall of Death</b>: the spell has no damage to repeat. Check its save activity.');
@@ -350,9 +398,9 @@ const layer = k => LAYERS.find(l => l.key === k);
 
 async function castPrism(wf, globe) {
     const tpl = await templateOf(wf);
-    if (!tpl) return gmWhisper('<b>Prismatic Wall</b>: no template was placed, so the wall isn\'t tracked.');
+    if (!tpl) return gmWhisper('<b>Prismatic Wall</b>: no ' + (isCat() ? 'area (Region)' : 'template') + ' was placed, so the wall isn\'t tracked.');
     const cfg = cfgOf(wf.item);
-    const s = shapeOf(tpl, gridOf());
+    const s = geom(tpl);
     const me = wf.token ?? tokenOfActor(wf.actor);
     const disp = me?.document.disposition;
     const allowed = canvas.tokens.placeables.filter(t => t?.actor && (t.id === me?.id || (disp !== undefined && t.document.disposition === disp))).map(t => t.document.uuid);
@@ -508,7 +556,7 @@ function onUpdateToken(doc, changed) {
     serial(doc.id, async () => {
         await sleep(300);
         for (const tpl of walls('death')) {
-            const st = wallState(tpl), s = shapeOf(tpl, gridOf());
+            const st = wallState(tpl), s = geom(tpl);
             const hit = crosses(from, to, s) || (distTo(to, s) <= rad && distTo(from, s) > rad);
             if (!hit) continue;
             const seen = entered.get(tpl.id) ?? new Map();
@@ -518,9 +566,9 @@ function onUpdateToken(doc, changed) {
             await deathTick(tpl, doc, 'enters');
         }
         for (const tpl of walls('prism')) {
-            const s = shapeOf(tpl, gridOf());
+            const s = geom(tpl);
             if (crosses(from, to, s) || (distTo(to, s) <= rad && distTo(from, s) > rad)) await prismPass(tpl, doc);
-            if (!canvas.scene.templates.get(tpl.id)) continue;
+            if (!areaAlive(tpl)) continue;
             if (near20(to, doc, s) && !near20(from, doc, s)) await prismGlare(tpl, doc);
         }
     });
@@ -543,7 +591,7 @@ async function onUpdateCombat(combat, changed) {
         if (pdoc?.actor && pdoc.parent?.id === canvas.scene?.id) {
             for (const tpl of walls('death')) {
                 const st = wallState(tpl);
-                if (inDeathZone(centerOf(pdoc), radiusOf(pdoc), shapeOf(tpl, gridOf()), st.side, Number(st.reach ?? 10) * pxft())) await deathTick(tpl, pdoc, 'ends');
+                if (inDeathZone(centerOf(pdoc), radiusOf(pdoc), geom(tpl), st.side, Number(st.reach ?? 10) * pxft())) await deathTick(tpl, pdoc, 'ends');
             }
             await indigoSave(pdoc);
         }
@@ -551,7 +599,7 @@ async function onUpdateCombat(combat, changed) {
         const cdoc = combat.combatant?.token;
         const actor = combat.combatant?.actor;
         if (cdoc?.actor && cdoc.parent?.id === canvas.scene?.id) {
-            for (const tpl of walls('prism')) if (near20(centerOf(cdoc), cdoc, shapeOf(tpl, gridOf()))) await prismGlare(tpl, cdoc);
+            for (const tpl of walls('prism')) if (near20(centerOf(cdoc), cdoc, geom(tpl))) await prismGlare(tpl, cdoc);
         }
         if (actor) {
             await violetSaves(actor);
@@ -616,19 +664,21 @@ async function onDeleteEffect(effect) {
     const uuid = effect.flags?.[MODULE_ID]?.petraWallTemplate;
     if (!uuid) return;
     const tpl = fromUuidSync(uuid);
-    if (tpl && tpl.parent?.templates.get(tpl.id)) await tpl.delete().catch(() => {});
+    if (tpl && areaAlive(tpl)) await tpl.delete().catch(() => {});
 }
 
 export function registerPetraSpells() {
-    Hooks.on('midi-qol.premades.postPreambleComplete', onPreamble);
-    Hooks.on('midi-qol.premades.postRollFinished', onRollFinished);
-    Hooks.on('midi-qol.premades.preDamageRollComplete', onDamageRolled);
+    Hooks.on(HOOKS.preambleComplete, onPreamble);
+    Hooks.on(HOOKS.rollFinished, onRollFinished);
+    Hooks.on(HOOKS.damageRollComplete, onDamageRolled);
     Hooks.on('canvasReady', onCanvasReady);
     Hooks.on('createToken', doc => { if (doc.parent?.id === canvas.scene?.id) lastPos.set(doc.id, centerOf(doc)); });
     Hooks.on('updateToken', onUpdateToken);
     Hooks.on('updateCombat', onUpdateCombat);
     Hooks.on('deleteMeasuredTemplate', onDeleteTemplate);
+    Hooks.on('deleteRegion', onDeleteTemplate);
+    Hooks.on('dnd5e.postCreateMeasuredTemplate', onRegionsPlaced);
     Hooks.on('deleteActiveEffect', onDeleteEffect);
     if (canvas?.ready) onCanvasReady();
-    return {LAYERS, burstPlan, shapeOf, distTo, sideOf, crosses, sideLabels, inDeathZone, risePending, zombieActor};
+    return {LAYERS, burstPlan, shapeOf, regionShape, distTo, sideOf, crosses, sideLabels, inDeathZone, risePending, zombieActor, cpr2Owns};
 }

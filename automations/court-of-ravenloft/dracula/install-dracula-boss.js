@@ -20,6 +20,8 @@
 //     By the Throat and Dispater's Supremacy (crits on 18-20 vs sealed creatures).
 //   - Terrorizing Force: Necrotic on Chris's Premades (1d8, 2d8 in Infernal Majesty).
 //   - Master of Hell: Inferno gets its Dex save. Feral Instinct renamed (advantage on initiative).
+//   - On an NPC stat block (tool "Make stat block"): native Legendary Action / Resistance pips,
+//     each Legendary Action in the Legendary Actions section, Hit Dice on the actor (1.6.1).
 // =====================================================================
 const MOD = 'nix-module';
 const PACK = 'chris-premades.CPRThirdPartyClassFeatures';
@@ -46,16 +48,20 @@ function sourceSpellLevel() {
 }
 const dc = roll.options?.target;
 if (!dc || roll.total >= dc) return;
-const cls = actor.items.filter(i => i.type === 'class' && (i.system.levels - (i.system.hd?.spent ?? 0)) > 0)
-    .sort((a, b) => parseInt(String(b.system.hd?.denomination).slice(1)) - parseInt(String(a.system.hd?.denomination).slice(1)))[0];
+// NPC stat block (Nix Fix "Make stat block"): Hit Dice and Legendary Resistance live on the
+// actor (system.attributes.hd, system.resources.legres). Character: class item + item uses.
+const npc = actor.type === 'npc';
+const byDie = (a, b) => parseInt(String(b.system.hd?.denomination).slice(1)) - parseInt(String(a.system.hd?.denomination).slice(1));
+const cls = npc ? null : actor.items.filter(i => i.type === 'class' && (i.system.levels - (i.system.hd?.spent ?? 0)) > 0).sort(byDie)[0];
+const npcHd = npc ? (actor.system.attributes.hd?.value ?? 0) : 0;
 const lr = actor.items.find(i => i.flags?.['nix-module']?.legendaryResistance);
-const lrLeft = lr?.system.uses?.value ?? 0;
-if (!cls && !lrLeft) return;
-const die = cls?.system.hd?.denomination ?? 'd10';
+const lrLeft = npc ? (actor.system.resources?.legres?.value ?? 0) : (lr?.system.uses?.value ?? 0);
+if (!cls && !npcHd && !lrLeft) return;
+const die = (npc ? actor.items.filter(i => i.type === 'class').sort(byDie)[0]?.system.hd?.denomination : cls?.system.hd?.denomination) ?? 'd10';
 const lvl = sourceSpellLevel();
 const bleedLabel = n => n ? 'bleed ' + n + 'd10' : 'no bleed';
 const buttons = [];
-if (cls) buttons.push(['Blood Price: spend a Hit Die, +1' + die, 'price']);
+if (cls || npcHd) buttons.push(['Blood Price: spend a Hit Die, +1' + die + (npc ? ' (' + npcHd + ' left)' : ''), 'price']);
 if (lrLeft) {
     const head = 'Legendary Resistance (' + lrLeft + ' left): succeed, ';
     const n = lvl === null ? 0 : Math.floor(lvl / 2);
@@ -76,7 +82,8 @@ async function aura(amount) {
     await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: '<b>Infernal Majesty:</b> the spilled blood lashes ' + foes[0].document.name + ' for ' + amount + '.'});
 }
 if (pick === 'price') {
-    await genericUtils.update(cls, {'system.hd.spent': (cls.system.hd.spent ?? 0) + 1});
+    if (npc) await genericUtils.update(actor, {'system.attributes.hd.spent': (actor.system.attributes.hd.spent ?? 0) + 1});
+    else await genericUtils.update(cls, {'system.hd.spent': (cls.system.hd.spent ?? 0) + 1});
     const r = await new Roll('1' + die).evaluate();
     const newRoll = MidiQOL.addRollTo(roll, r);
     newRoll.data = roll.data;
@@ -84,7 +91,8 @@ if (pick === 'price') {
     await aura(r.total);
     return newRoll;
 }
-await genericUtils.update(lr, {'system.uses.spent': (lr.system.uses.spent ?? 0) + 1});
+if (npc) await genericUtils.update(actor, {'system.resources.legres.spent': (actor.system.resources.legres.spent ?? 0) + 1});
+else await genericUtils.update(lr, {'system.uses.spent': (lr.system.uses.spent ?? 0) + 1});
 const dice = Number(String(pick).split(':')[1]) || 0;
 const bleed = dice ? (await new Roll(dice + 'd10').evaluate()).total : 0;
 await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: '<b>Legendary Resistance (Blood Price):</b> ' + actor.name + ' succeeds instead'
@@ -325,5 +333,12 @@ await actor.update({['flags.' + MOD + '.illrigger.unlimitedSeals']: true,
         lairScenes: prevBoss.lairScenes ?? [], legendaryBase: 4, legendaryLair: 5,
         regen: true, regenAmount: prevBoss.regenAmount ?? 20, radiantStop: prevBoss.radiantStop ?? 15, radiantTaken: prevBoss.radiantTaken ?? 0}});
 report.push('Regeneration: ' + (prevBoss.regenAmount ?? 20) + ' HP at the start of his turn unless he took ' + (prevBoss.radiantStop ?? 15) + '+ radiant since his last turn.');
+
+// ---- 13. NPC stat block (Make stat block): native pips, Legendary Actions section --------------
+if (actor.type === 'npc') {
+    const sb = game.modules.get(MOD)?.api?.statBlock;
+    if (sb) report.push(...await sb.npcLegendary(actor));
+    else report.push('<b>NPC:</b> Nix Fix\'s runtime isn\'t running, so the stat block layout was skipped.');
+}
 
 await ChatMessage.create({whisper: [game.user.id], content: '<b>Nix Fix: ' + actor.name + ' boss kit</b><ul><li>' + report.join('</li><li>') + '</li></ul>'});

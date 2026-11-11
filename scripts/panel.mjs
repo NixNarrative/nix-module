@@ -5,7 +5,7 @@
 import {MODULE_ID, TITLE} from './constants.mjs';
 import {CAMPAIGNS, CHARACTERS, entriesFor} from './registry.mjs';
 import {detectEngine} from './compat.mjs';
-import {actorFor, bind, candidates, runEntry, statusOf} from './runner.mjs';
+import {actorFor, actorsOf, bind, candidates, runEntry, statusOf} from './runner.mjs';
 import {currentCampaign, guessCampaign} from './campaign.mjs';
 import {showHealth} from './health.mjs';
 import {revertEntry, undoIndex} from './undo.mjs';
@@ -117,7 +117,7 @@ export class NixPanel extends foundry.applications.api.ApplicationV2 {
         h += '<section><h3>Characters</h3><table class="nix-table">';
         for (const ch of ctx.chars) {
             const o = ['<option value="">(not in this world)</option>'].concat(ch.options.map(a =>
-                '<option value="' + a.uuid + '"' + (ch.actor?.uuid === a.uuid ? ' selected' : '') + '>' + esc(a.name) + '</option>'));
+                '<option value="' + a.uuid + '"' + (ch.actor?.uuid === a.uuid ? ' selected' : '') + '>' + esc(a.name) + (a.type === 'npc' ? ' (NPC)' : '') + '</option>'));
             const note = ch.how === 'ambiguous' ? '<small class="nix-warn">Several matches: pick one</small>'
                 : ch.how === 'none' ? '<small>No actor found</small>' : ch.how === 'auto' ? '<small>auto</small>' : '';
             h += '<tr><td><b>' + esc(ch.c.name) + '</b></td><td><select name="bind" data-char="' + ch.key + '">' + o.join('') + '</select> ' + note + '</td></tr>';
@@ -136,7 +136,7 @@ export class NixPanel extends foundry.applications.api.ApplicationV2 {
                 : '<button type="button" data-action="apply" data-id="' + e.id + '">' + (e.kind === 'tool' ? 'Run' : s.state === 'current' ? 'Re-apply' : 'Apply') + '</button>';
             h += '<tr' + (inactive ? ' class="nix-dim"' : '') + '><td class="nix-icon" title="' + esc(label) + '">' + icon + '</td>'
                 + '<td><b>' + esc(e.title) + '</b> <span class="nix-kind">' + KIND[e.kind] + '</span>'
-                + (e.actors?.length ? ' <small>' + e.actors.map(k => esc(CHARACTERS[k]?.name ?? k)).join(', ') + '</small>' : '')
+                + (actorsOf(e).length ? ' <small>' + actorsOf(e).map(k => esc(CHARACTERS[k]?.name ?? k)).join(', ') + '</small>' : '')
                 + '<br><small>' + esc(e.does) + '</small></td>'
                 + '<td><small>' + esc(s.state === 'retired' ? 'Retired on v14' : label) + (when ? '<br>' + esc(when) : '') + (s.why ? '<br>' + esc(s.why) : '') + '</small></td>'
                 + '<td>' + button + revert + '</td></tr>';

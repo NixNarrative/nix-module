@@ -26,6 +26,8 @@ import {registerBloodrift} from './court/bloodrift.mjs';
 import {registerBoss} from './court/boss.mjs';
 import {registerLieutenants} from './court/lieutenants.mjs';
 import {registerPetraSpells} from './court/petra-spells.mjs';
+import {registerStatBlock} from './court/statblock.mjs';
+import * as illriggerFeatures from './court/illrigger-features.mjs';
  
 let panel;
 const open = () => (panel ??= new NixPanel()).render({force: true});
@@ -72,16 +74,26 @@ Hooks.on('renderSettings', (app, html) => {
     target.append(btn);
 });
  
-// Court of Ravenloft runtime (Illrigger engine, Bloodrift, Dracula's boss kit). v13 / Chris's Premades 1 only;
-// each part acts only on actors and items its installer marked.
+// Court of Ravenloft runtime (Illrigger engine, Bloodrift, Dracula's boss kit, lieutenants, Petra's spells,
+// Make stat block). Each part acts only on actors and items its installer marked. The same files run on
+// v13 (Chris's Premades 1) and v14 (CAT): engine.mjs routes the helpers (docs/V14-PORT-COURT.md).
 Hooks.once('ready', () => {
-    if (detectEngine().id !== 'cpr1') return;
+    const engine = detectEngine().id;
+    if (engine !== 'cpr1' && engine !== 'cat') return;
     const api = game.modules.get(MODULE_ID).api;
     api.illrigger = registerIllrigger();
     api.bloodrift = registerBloodrift();
     api.boss = registerBoss();
     api.court = registerLieutenants();
     api.petraSpells = registerPetraSpells();
+    api.statBlock = registerStatBlock();
+});
+
+// Court of Ravenloft on v14: the Illrigger class features Chris's Premades 2 doesn't have, as CAT
+// function macros (court/illrigger-features.mjs). catReady only fires where CAT is active (v14).
+Hooks.once('catReady', () => {
+    illriggerFeatures.registerIllriggerFeatures();
+    game.modules.get(MODULE_ID).api.illriggerFeatures = illriggerFeatures;
 });
 
 Hooks.once('ready', async () => {

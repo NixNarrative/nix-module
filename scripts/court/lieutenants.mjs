@@ -1,5 +1,5 @@
 // =====================================================================
-//  NIX FIX: Court of Ravenloft lieutenants (Dayus Manroe, Sydmore, Valintina, Lucian), v13
+//  NIX FIX: Court of Ravenloft lieutenants (Dayus Manroe, Sydmore, Valintina, Lucian), v13 and v14
 //  Boss stat blocks in the same shape as Dracula's: their installers prepare the actor
 //  (flags.nix-module.court = {key, ...}, activity flags flags.nix-module.court = '<kind>')
 //  and boss.mjs runs their Legendary Actions (3, back at the start of their turn) and
@@ -20,13 +20,13 @@
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {biItem, cfgOf, executeRow, isActiveGM, living, placeSeal, sealsOn, tokenOf} from './illrigger.mjs';
+import {cpr, fxAll, MODES, HOOKS} from './engine.mjs';
 
 export const FLAG = 'court';
 const CHANNEL = 'module.' + MODULE_ID;
-const cpr = () => globalThis.chrisPremades?.utils;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const OV = () => CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
-const ADD = () => CONST.ACTIVE_EFFECT_MODES.ADD;
+const OV = () => MODES.OVERRIDE;
+const ADD = () => MODES.ADD;
 const DOWN = ['incapacitated', 'unconscious', 'paralyzed', 'stunned', 'petrified', 'dead'];
 
 export const ltOf = actor => actor?.flags?.[MODULE_ID]?.[FLAG] ?? null;
@@ -109,7 +109,7 @@ const HANDLERS = {
     async effect({actor, data}) {
         const a = actorFrom(actor);
         if (!a) return null;
-        const [e] = await a.createEmbeddedDocuments('ActiveEffect', [data]);
+        const [e] = await a.createEmbeddedDocuments('ActiveEffect', fxAll([data]));
         return e?.id ?? null;
     },
     async deleteEffect({actor, id}) { const a = actorFrom(actor); await a?.effects.get(id)?.delete().catch(() => {}); return true; },
@@ -217,9 +217,9 @@ async function markedForDeath(wf) {
     const t = wf.targets?.first?.();
     if (!t?.actor || !sealsOn(t.actor).has(a.uuid)) return;
     markedTurn.set(a.uuid, turnKey());
-    await a.createEmbeddedDocuments('ActiveEffect', [{name: 'Marked for Death', img: 'icons/skills/targeting/crosshair-pointed-orange.webp', transfer: false,
+    await a.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Marked for Death', img: 'icons/skills/targeting/crosshair-pointed-orange.webp', transfer: false,
         duration: {turns: 1}, changes: [{key: 'flags.midi-qol.advantage.attack.all', mode: OV(), value: '1', priority: 20}],
-        flags: {dae: {specialDuration: ['1Attack']}, [MODULE_ID]: {transient: true}}}]);
+        flags: {dae: {specialDuration: ['1Attack']}, [MODULE_ID]: {transient: true}}}]));
 }
 async function dayusDamage(wf) {
     const a = wf.actor, lt = ltOf(a);
@@ -270,9 +270,9 @@ async function slowMastery(wf) {
 }
 async function veilOfLies(actor) {
     if (!await spendSealsLocal(actor, 1)) return ui.notifications.warn('Veil of Lies: no seals left.');
-    await actor.createEmbeddedDocuments('ActiveEffect', [{name: 'Veil of Lies', img: 'icons/magic/perception/silhouette-stealth-shadow.webp', transfer: false,
+    await actor.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Veil of Lies', img: 'icons/magic/perception/silhouette-stealth-shadow.webp', transfer: false,
         statuses: ['invisible'], duration: {seconds: 600}, description: 'Invisible for 10 minutes or until he attacks or casts a spell.',
-        flags: {dae: {specialDuration: ['1Attack', '1Spell']}}}]);
+        flags: {dae: {specialDuration: ['1Attack', '1Spell']}}}]));
     await say(actor, '<b>Veil of Lies:</b> ' + esc(actor.name) + ' spends a seal and vanishes.');
 }
 
@@ -405,7 +405,7 @@ function onExsanguinate(owner, ally) {
     const data = {name: 'Exsanguinate (Bloodstroke)', img: 'icons/magic/unholy/barrier-shield-glowing-pink.webp', transfer: false,
         description: 'While it has these temporary hit points, a creature that hits it with a melee attack takes ' + levelOf(owner) + ' damage.',
         flags: {[MODULE_ID]: {exsanguinate: owner.uuid}}};
-    (old ? old.update(data) : ally.actor.createEmbeddedDocuments('ActiveEffect', [data])).catch(err => console.error(TITLE + ' | Bloodstroke mark', err));
+    (old ? old.update(data) : ally.actor.createEmbeddedDocuments('ActiveEffect', fxAll([data]))).catch(err => console.error(TITLE + ' | Bloodstroke mark', err));
 }
 // Sanguine Gift: an ally within 30 ft of Sydmore regains HP -> spend a seal for + his level.
 async function sanguineGift(actor, gain) {
@@ -496,9 +496,9 @@ async function enervate(wf) {
     if (!await spendSealsLocal(a, 1)) { ui.notifications.warn('Enervating Spell: no seals left (still armed).'); return; }
     await armed.delete();
     const made = [];
-    const [self] = await a.createEmbeddedDocuments('ActiveEffect', [{name: 'Enervating Spell (casting)', img: 'icons/magic/unholy/projectile-helix-blood-red.webp', transfer: false,
+    const [self] = await a.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Enervating Spell (casting)', img: 'icons/magic/unholy/projectile-helix-blood-red.webp', transfer: false,
         changes: types.flatMap(t => [{key: 'system.traits.idr.value', mode: ADD(), value: t, priority: 20}, {key: 'system.traits.idi.value', mode: ADD(), value: t, priority: 20}]),
-        flags: {[MODULE_ID]: {transient: true}}}]);
+        flags: {[MODULE_ID]: {transient: true}}}]));
     made.push({actor: a.uuid, id: self.id});
     for (const t of (wf.hitTargets?.size ? wf.hitTargets : wf.targets)) {
         if (!t.actor) continue;
@@ -758,9 +758,9 @@ async function onRollFinished(wf) {
                 return;
             }
             case 'enervating':
-                if (!a.effects.some(e => e.flags?.[MODULE_ID]?.enervating)) await a.createEmbeddedDocuments('ActiveEffect', [{name: 'Enervating Spell (ready)', img: 'icons/magic/unholy/projectile-helix-blood-red.webp',
+                if (!a.effects.some(e => e.flags?.[MODULE_ID]?.enervating)) await a.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Enervating Spell (ready)', img: 'icons/magic/unholy/projectile-helix-blood-red.webp',
                     transfer: false, duration: {seconds: 60}, description: 'The next illrigger spell of 1st level or higher that deals damage spends a seal: its targets become vulnerable to its damage.',
-                    flags: {[MODULE_ID]: {enervating: true}}}]);
+                    flags: {[MODULE_ID]: {enervating: true}}}]));
                 return say(a, '<b>Enervating Spell:</b> ready for her next damaging spell (1 minute).');
             case 'cantrip': {
                 const cantrips = a.items.filter(i => i.type === 'spell' && Number(i.system.level) === 0 && i.system.activities?.size);
@@ -818,11 +818,11 @@ async function onUpdateCombat(combat, changed) {
 export function registerLieutenants() {
     game.socket.on(CHANNEL, onSocket);
     Hooks.on('dnd5e.preUseActivity', onPreUse);
-    Hooks.on('midi-qol.premades.postPreambleComplete', onPreamble);
+    Hooks.on(HOOKS.preambleComplete, onPreamble);
     Hooks.on('midi-qol.premades.postWaitForAttackRoll', onAttackRolled);
-    Hooks.on('midi-qol.premades.preDamageRollComplete', onDamageRolled);
-    Hooks.on('midi-qol.premades.postAttackRollComplete', onAttackComplete);
-    Hooks.on('midi-qol.premades.postRollFinished', onRollFinished);
+    Hooks.on(HOOKS.damageRollComplete, onDamageRolled);
+    Hooks.on(HOOKS.attackRollComplete, onAttackComplete);
+    Hooks.on(HOOKS.rollFinished, onRollFinished);
     Hooks.on('preCreateActiveEffect', onPreCreateEffect);
     Hooks.on('deleteActiveEffect', onDeleteEffect);
     Hooks.on('updateActor', onUpdateActor);

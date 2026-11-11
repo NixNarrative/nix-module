@@ -180,7 +180,9 @@ const HEIGHTENED = mmMacro(`// HEIGHTENED SPELL (2024), v14 / CAT. Item macro: r
             const chosen = await dialogUtils.selectTargetDialog(primed.name,
                 'Which target has disadvantage on its saves against ' + workflow.item.name + '?',
                 targets.map(t => t.document), {skipDeadAndUnconscious: false, displayDistance: false});
-            pick = chosen?.[0]?.document ?? chosen?.[0];
+            // CAT returns {result, skip} (older: [result, skip]); the result is a TokenDocument.
+            const raw = chosen?.result !== undefined ? chosen.result : (Array.isArray(chosen) ? chosen[0] : chosen);
+            pick = raw?.document ?? raw;
         }
         if (!pick?.actor) return;
  
@@ -301,7 +303,9 @@ const TWINNED = mmMacro(`// TWINNED SPELL (2024), v14 / CAT. Item macro: roll / 
             const chosen = await dialogUtils.selectTargetDialog('Twinned Spell',
                 'Only one creature was targeted. Choose the second target for ' + workflow.item.name + '.',
                 candidates.map(t => t.document), {skipDeadAndUnconscious: false, coverToken: caster.document, displayDistance: true});
-            const pickDoc = chosen?.[0]?.document ?? chosen?.[0];
+            // CAT returns {result, skip} (older: [result, skip]); the result is a TokenDocument.
+            const raw = chosen?.result !== undefined ? chosen.result : (Array.isArray(chosen) ? chosen[0] : chosen);
+            const pickDoc = raw?.document ?? raw;
             const twin = pickDoc?.object;
             if (!twin) return refund('no second target chosen.');
             workflow.targets.add(twin);

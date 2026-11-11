@@ -1,5 +1,5 @@
 // =====================================================================
-//  NIX FIX: Illrigger engine (Court of Ravenloft, Foundry v13 / Chris's Premades 1)
+//  NIX FIX: Illrigger engine (Court of Ravenloft; v13 Chris's Premades 1 and v14 CAT)
 //
 //  Replaces Chris's Premades' Baleful Interdict prompt flow for every actor the
 //  "Illrigger engine" world installer has prepared (flags.nix-module.illrigger).
@@ -23,6 +23,7 @@
 //  Runs on the active GM's client. API: game.modules.get('nix-module').api.illrigger
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
+import {cpr, fx, ident as engineIdent, MODES, HOOKS} from './engine.mjs';
 
 export const FLAG = 'illrigger';
 export const SEAL_ID = 'balefulInterdictEffect';
@@ -31,9 +32,8 @@ const DOWN = ['incapacitated', 'unconscious', 'paralyzed', 'stunned', 'petrified
 const EVENT_WINDOW = 350;                    // ms: damage landing this close together is one event
 const IN_FLIGHT_MS = 6000;
 
-const cpr = () => globalThis.chrisPremades?.utils;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const ident = doc => doc?.flags?.['chris-premades']?.info?.identifier;
+const ident = engineIdent;
 export const cfgOf = actor => actor?.flags?.[MODULE_ID]?.[FLAG] ?? null;
 export const isActiveGM = () => game.user.isGM && (!game.users.activeGM || game.users.activeGM.id === game.user.id);
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -159,11 +159,11 @@ async function rollDamage(owner, targetToken, formula, type, name, img) {
 
 async function withSuperiorInterdict(owner, fn) {
     if (!cfgOf(owner)?.superiorInterdict) return fn();
-    const [tmp] = await owner.createEmbeddedDocuments('ActiveEffect', [{
+    const [tmp] = await owner.createEmbeddedDocuments('ActiveEffect', [fx({
         name: 'Superior Interdict (burning)', img: 'icons/magic/fire/flame-burning-skull-orange.webp', transfer: false,
-        duration: {seconds: 6}, changes: BURN_TYPES.map(v => ({key: 'system.traits.idr.value', mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: v, priority: 20})),
+        duration: {seconds: 6}, changes: BURN_TYPES.map(v => ({key: 'system.traits.idr.value', mode: MODES.ADD, value: v, priority: 20})),
         flags: {[MODULE_ID]: {transient: true}}
-    }]);
+    })]);
     try { return await fn(); }
     finally { if (tmp) await tmp.delete().catch(() => {}); }
 }
@@ -190,8 +190,9 @@ function sealData(owner, item) {
     });
     if (data.flags?.['chris-premades']) delete data.flags['chris-premades'].macros;
     if (data.flags?.dnd5e) delete data.flags.dnd5e.dependents;
+    if (data.flags?.cat) { delete data.flags.cat.macros; delete data.flags.cat.embeddedMacros; }
     data.duration = {};
-    return data;
+    return fx(data);
 }
 
 export async function placeSeal(owner, targetToken, count = 1, {free = false} = {}) {
@@ -475,6 +476,8 @@ async function onCreateEffect(effect, options, userId) {
     if (effect.flags?.['chris-premades']?.macros) upd['flags.chris-premades.-=macros'] = null;
     if (!effect.flags?.[MODULE_ID]?.seal) upd['flags.' + MODULE_ID + '.seal'] = {owner: owner.uuid};
     if (ident(effect) !== SEAL_ID) upd['flags.chris-premades.info.identifier'] = SEAL_ID;
+    if (effect.flags?.cat?.identifier !== SEAL_ID && globalThis.cat?.utils) upd['flags.cat.identifier'] = SEAL_ID;
+    if (effect.flags?.cat?.macros || effect.flags?.cat?.embeddedMacros) { upd['flags.cat.-=macros'] = null; upd['flags.cat.-=embeddedMacros'] = null; }
     if (Object.keys(upd).length) await effect.update(upd);
 }
 
@@ -493,11 +496,47 @@ export async function burnAll(owner, {type = 'necrotic', radius} = {}) {
     return total;
 }
 
+// The burn dialog for chosen targets, as if they had just taken damage (Baleful Interdict's
+// own "Burn Seals" activities on v14 open this instead of rolling their fixed damage).
+export async function promptBurn(owner, tokens, {title} = {}) {
+    const rows = [];
+    for (const t of tokens ?? []) {
+        if (!t?.actor) continue;
+        const have = sealsOn(t.actor).get(owner.uuid)?.effects.length ?? 0;
+        if (have && inReach(owner, t)) rows.push({owner, token: t, have, boons: boonsFor(owner, t)});
+    }
+    if (!rows.length) { ui.notifications.info((title ?? 'Baleful Interdict') + ': none of your seals within range on the target.'); return 0; }
+    const picks = await decide(title ?? (TITLE + ': Burn seals'), esc(owner.name) + ' burns seals.', rows);
+    let total = 0;
+    for (const p of picks ?? []) if (p.n > 0) total += await executeRow(p).catch(err => { console.error(TITLE + ' | burn', err); return 0; });
+    return total;
+}
+
+// Baleful Interdict: Move Seals. Every seal this Illrigger has on one dead or unconscious
+// creature moves to the target (the creature chosen from those carrying his seals).
+export async function moveSeals(owner, targetToken, {pick} = {}) {
+    if (!targetToken?.actor) return 0;
+    const from = canvas.tokens.placeables.filter(t => t.actor && t.id !== targetToken.id
+        && (t.actor.statuses.has('dead') || t.actor.statuses.has('unconscious') || (t.actor.system.attributes?.hp?.value ?? 1) <= 0)
+        && (sealsOn(t.actor).get(owner.uuid)?.effects.length ?? 0) > 0);
+    if (!from.length) { ui.notifications.info('Move Seals: none of your seals are on a dead or unconscious creature.'); return 0; }
+    const src = from.length === 1 ? from[0] : (pick ? await pick(from) : from[0]);
+    if (!src) return 0;
+    if (distance(src, targetToken) > 30) { ui.notifications.info('Move Seals: the new target must be within 30 ft of ' + src.document.name + '.'); return 0; }
+    const mine = sealsOn(src.actor).get(owner.uuid)?.effects ?? [];
+    const datas = mine.map(e => { const d = e.toObject(); delete d._id; return d; });
+    await src.actor.deleteEmbeddedDocuments('ActiveEffect', mine.map(e => e.id));
+    await targetToken.actor.createEmbeddedDocuments('ActiveEffect', datas);
+    await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: owner}),
+        content: '<b>Move Seals:</b> ' + datas.length + ' seal' + (datas.length > 1 ? 's' : '') + ' move from ' + esc(src.document.name) + ' to ' + esc(targetToken.document.name) + '.'});
+    return datas.length;
+}
+
 export function registerIllrigger() {
-    Hooks.on('midi-qol.premades.postAttackRollComplete', onAttackComplete);
-    Hooks.on('midi-qol.premades.preDamageRollComplete', onDamageRolled);
-    Hooks.on('midi-qol.premades.postRollFinished', onRollFinished);
+    Hooks.on(HOOKS.attackRollComplete, onAttackComplete);
+    Hooks.on(HOOKS.damageRollComplete, onDamageRolled);
+    Hooks.on(HOOKS.rollFinished, onRollFinished);
     Hooks.on('updateActor', onUpdateActor);
     Hooks.on('createActiveEffect', onCreateEffect);
-    return {cfgOf, sealsOn, sealDice, placeSeal, executeRow, burnAll, canPlace, burnFormula, isSeal};
+    return {cfgOf, sealsOn, sealDice, placeSeal, executeRow, burnAll, canPlace, burnFormula, isSeal, promptBurn, moveSeals};
 }

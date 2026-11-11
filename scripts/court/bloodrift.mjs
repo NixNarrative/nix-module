@@ -1,5 +1,5 @@
 // =====================================================================
-//  NIX FIX: Bloodrift (Court of Ravenloft homebrew artifact, v13 / Midi QOL)
+//  NIX FIX: Bloodrift (Court of Ravenloft homebrew artifact, v13 and v14 / Midi QOL)
 //  Runs for any weapon the Bloodrift installer marked (flags.nix-module.bloodrift).
 //
 //  Blood Gauge = the item's Uses (0-100), so it shows on the sheet and Red Mist /
@@ -18,6 +18,7 @@
 //  Workflow parts run on the client running the attack; turn-start parts on the GM.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
+import {cpr, fx, MODES, HOOKS, teleport} from './engine.mjs';
 
 export const FLAG = 'bloodrift';
 export const FORMS = {
@@ -25,7 +26,6 @@ export const FORMS = {
     long: {label: 'Longsword', number: 1, faces: 8, type: 'slashing', props: ['ver', 'mgc'], mastery: 'sap', base: 'longsword', decay: 5, versatile: {number: 1, faces: 10}},
     great: {label: 'Greatsword', number: 2, faces: 6, type: 'slashing', props: ['hev', 'two', 'mgc'], mastery: 'graze', base: 'greatsword', decay: 0}
 };
-const cpr = () => globalThis.chrisPremades?.utils;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const isActiveGM = () => game.user.isGM && (!game.users.activeGM || game.users.activeGM.id === game.user.id);
 const inCombat = () => !!game.combat?.started;
@@ -136,12 +136,12 @@ function onPreUse(activity) {
 async function onPreamble(workflow) {
     if (!isMine(workflow) || actKind(workflow.activity) !== 'attack' && actKind(workflow.activity) !== 'unleash') return;
     // Bloodrift's necrotic ignores resistance for this attack.
-    const [fx] = await workflow.actor.createEmbeddedDocuments('ActiveEffect', [{
+    const [eff] = await workflow.actor.createEmbeddedDocuments('ActiveEffect', [fx({
         name: 'Bloodrift: necrotic ignores resistance', img: workflow.item.img, transfer: false, duration: {seconds: 6},
-        changes: [{key: 'system.traits.idr.value', mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: 'necrotic', priority: 20}],
+        changes: [{key: 'system.traits.idr.value', mode: MODES.ADD, value: 'necrotic', priority: 20}],
         flags: {[MODULE_ID]: {transient: true}}
-    }]);
-    workflow.nixBloodriftFx = fx?.id;
+    })]);
+    workflow.nixBloodriftFx = eff?.id;
 }
 
 async function onPostAttackRoll(workflow) {
@@ -235,7 +235,7 @@ async function onRollFinished(workflow) {
     }
     if (kind === 'redMist' && token) {
         const ft = Number(workflow.activity.flags?.[MODULE_ID]?.feet) || 15;
-        await chrisPremades.Teleport.target([token], token, {range: ft, animation: 'mistyStep'});
+        await teleport(token, {range: ft, animation: 'mistyStep'});
         await mutate(item, {});      // consumption already took the Gauge; re-check the form
         return;
     }
@@ -318,8 +318,8 @@ async function onUpdateCombat(combat, changed) {
     // Death Wish.
     const hp = actor.system.attributes.hp;
     if (hp.max && hp.value > 0 && hp.value <= hp.max * 0.2) {
-        await actor.createEmbeddedDocuments('ActiveEffect', [{name: 'Death Wish', img: item.img, transfer: false, duration: {turns: 1},
-            description: 'Started the turn at or below 20% HP: one additional action this turn.', flags: {dae: {specialDuration: ['turnEnd']}}}]);
+        await actor.createEmbeddedDocuments('ActiveEffect', [fx({name: 'Death Wish', img: item.img, transfer: false, duration: {turns: 1},
+            description: 'Started the turn at or below 20% HP: one additional action this turn.', flags: {dae: {specialDuration: ['turnEnd']}}})]);
         await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: '<b>Bloodrift: Death Wish</b>. ' + esc(actor.name) + ' gains one additional action this turn.'});
     }
     // The Hunger Within.
@@ -332,9 +332,9 @@ async function onUpdateCombat(combat, changed) {
             // The wielder's necrotic immunity holds: no self-damage (Dracula).
             const immune = necroticImmune(actor);
             const cost = immune ? 'necrotic immunity: no damage if it can\'t attack' : 'if it can\'t attack, it takes necrotic damage equal to half the Blood Gauge';
-            await actor.createEmbeddedDocuments('ActiveEffect', [{name: 'The Hunger Within: Mad', img: item.img, transfer: false, duration: {turns: 1},
+            await actor.createEmbeddedDocuments('ActiveEffect', [fx({name: 'The Hunger Within: Mad', img: item.img, transfer: false, duration: {turns: 1},
                 description: 'Must move toward and attack the nearest creature it can perceive (' + cost + ').',
-                flags: {dae: {specialDuration: ['turnEnd']}}}]);
+                flags: {dae: {specialDuration: ['turnEnd']}}})]);
             await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: '<b>The Hunger Within</b> (DC ' + dc + '): ' + esc(actor.name)
                 + ' is driven mad until the end of the turn. Move toward and attack the nearest creature you can perceive'
                 + (immune ? '. (Immune to necrotic: no damage if he can\'t attack.)' : '; if you can\'t attack, take ' + Math.floor(g / 2) + ' necrotic damage.')});
@@ -353,12 +353,12 @@ function onPreUpdateItem(item, changed) {
 
 export function registerBloodrift() {
     Hooks.on('dnd5e.preUseActivity', onPreUse);
-    Hooks.on('midi-qol.premades.postPreambleComplete', onPreamble);
+    Hooks.on(HOOKS.preambleComplete, onPreamble);
     Hooks.on('midi-qol.premades.postWaitForAttackRoll', onPostAttackRoll);
-    Hooks.on('midi-qol.premades.preDamageRollComplete', onDamageRolled);
+    Hooks.on(HOOKS.damageRollComplete, onDamageRolled);
     Hooks.on('midi-qol.preTargetDamageApplication', onTargetDamage);
-    Hooks.on('midi-qol.premades.postRollFinished', onRollFinished);
-    Hooks.on('midi-qol.premades.postAttackRollComplete', onAttackComplete);
+    Hooks.on(HOOKS.rollFinished, onRollFinished);
+    Hooks.on(HOOKS.attackRollComplete, onAttackComplete);
     Hooks.on('updateCombat', onUpdateCombat);
     Hooks.on('preUpdateItem', onPreUpdateItem);
     return {FORMS, formOf, gaugeOf, mutate, formUpdate, bestAbility, extraDieOn};

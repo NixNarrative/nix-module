@@ -1,5 +1,5 @@
 // =====================================================================
-//  NIX FIX: Court of Ravenloft boss kit (Dracula), v13
+//  NIX FIX: Court of Ravenloft boss kit (Dracula), v13 and v14
 //  For an actor the "Dracula: boss kit" installer prepared (flags.nix-module.boss):
 //   - Legendary Actions (an item, 4 uses, 5 in his lair, back at the start of his turn):
 //       Seal (1), Strike (2, Bloodrift first), By the Throat (2: seal + By the Throat).
@@ -13,12 +13,13 @@
 //     Actions refill. Mythic Action: Hellfire Detonation (2): burn every seal he has on
 //     creatures within 30 ft.
 //  Runs on a GM client (radiant damage is counted on any client, written through CPR's socket).
+//  On an NPC stat block (1.6.1 "Make stat block") the counts use the native Legendary Action pips.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {biItem, burnAll, placeSeal, tokenOf} from './illrigger.mjs';
+import {cpr, fx, ident, isCat, HOOKS} from './engine.mjs';
 
 export const FLAG = 'boss';
-const cpr = () => globalThis.chrisPremades?.utils;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 export const bossOf = actor => actor?.flags?.[MODULE_ID]?.[FLAG] ?? null;
 const kindOf = activity => activity?.flags?.[MODULE_ID]?.[FLAG] ?? null;
@@ -32,12 +33,32 @@ const laOf = actor => {
     return actor?.items.get(b?.legendaryItem) ?? actor?.items.find(i => i.flags?.[MODULE_ID]?.legendary) ?? actor?.items.find(i => /^legendary actions/i.test(i.name));
 };
 export const inLair = (actor, scene) => !!scene && (bossOf(actor)?.lairScenes ?? []).includes(scene.id);
+// NPC stat blocks ("Make stat block") count Legendary Actions / Resistances on the native
+// pips (system.resources.legact / legres); character copies on the items' uses.
+export const isNpcBoss = actor => actor?.type === 'npc' && !!actor.system?.resources?.legact;
+export const legendaryMax = actor => isNpcBoss(actor) ? actor.system.resources.legact.max : laOf(actor)?.system.uses?.max;
 // Legendary Actions max: 4, or 5 when the scene is one of his lairs.
 export async function syncLegendaryMax(actor, scene = game.combat?.scene ?? canvas.scene) {
-    const b = bossOf(actor), la = laOf(actor);
-    if (!b || !la) return;
-    const max = String(inLair(actor, scene) ? (b.legendaryLair ?? LEGENDARY.lair) : (b.legendaryBase ?? LEGENDARY.base));
+    const b = bossOf(actor);
+    if (!b) return;
+    const lairMax = inLair(actor, scene) ? (b.legendaryLair ?? LEGENDARY.lair) : (b.legendaryBase ?? LEGENDARY.base);
+    if (isNpcBoss(actor)) {
+        if (Number(actor._source.system.resources.legact.max) !== Number(lairMax)) await actor.update({'system.resources.legact.max': Number(lairMax)});
+        return;
+    }
+    const la = laOf(actor);
+    if (!la) return;
+    const max = String(lairMax);
     if (String(la.system.uses?.max) !== max) await la.update({'system.uses.max': max});
+}
+// Refill: the item's uses, or the pips (dnd5e itself refills the pips only at the end of his turn).
+async function refillLegendary(actor) {
+    if (isNpcBoss(actor)) {
+        if (actor.system.resources.legact.spent) await actor.update({'system.resources.legact.spent': 0});
+        return;
+    }
+    const la = laOf(actor);
+    if (la?.system.uses?.max) await la.update({'system.uses.spent': 0});
 }
 
 function onPreUse(activity) {
@@ -62,7 +83,7 @@ async function onRollFinished(workflow) {
         } else if (kind === 'throat') {
             if (!target) return ui.notifications.warn('By the Throat: target a creature first.');
             await placeSeal(actor, target, 1, {free: true});
-            const it = actor.items.find(i => i.flags?.['chris-premades']?.info?.identifier === 'byTheThroat') ?? actor.items.find(i => /by the throat/i.test(i.name));
+            const it = actor.items.find(i => ident(i) === 'byTheThroat') ?? actor.items.find(i => /by the throat/i.test(i.name));
             if (it) await cpr().workflowUtils.syntheticItemRoll(it, [target], {consumeUsage: false, consumeResources: false});
         } else if (kind === 'strike') {
             if (!target) return ui.notifications.warn('Legendary Strike: target a creature first.');
@@ -81,7 +102,7 @@ async function onRollFinished(workflow) {
             await syncLegendaryMax(actor, scene);
             await ChatMessage.create({whisper: [game.user.id], speaker: ChatMessage.getSpeaker({actor}),
                 content: '<b>Lair:</b> ' + esc(scene.name) + (on ? ' is now ' : ' is no longer ') + esc(actor.name) + '\'s lair. Legendary Actions: '
-                    + laOf(actor)?.system.uses?.max + ' (refilled at the start of his turn).'});
+                    + legendaryMax(actor) + ' (refilled at the start of his turn).'});
         } else if (kind === 'detonate') {
             const dealt = await burnAll(actor, {type: 'necrotic', radius: 30});
             await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: '<b>Hellfire Detonation:</b> every seal within 30 ft burns' + (dealt ? ' (' + dealt + ' damage).' : '. No seals in range.')});
@@ -106,6 +127,7 @@ export async function startOfTurn(actor, scene) {
     const b = bossOf(actor);
     if (!b) return;
     await syncLegendaryMax(actor, scene);
+    if (isNpcBoss(actor)) await refillLegendary(actor);   // the item version refills itself (recovery: turn start)
     if (b.regen === false) return;
     const amount = Number(b.regenAmount ?? REGEN.amount), stop = Number(b.radiantStop ?? REGEN.radiantStop);
     const radiant = Number(b.radiantTaken) || 0;
@@ -155,10 +177,9 @@ export async function ascend(actor) {
     await clearDown(actor);
     setTimeout(() => clearDown(actor), 1500);    // Midi may add its 0-HP status a moment later
     await syncLegendaryMax(actor);
-    const la = laOf(actor);
-    if (la?.system.uses?.max) await la.update({'system.uses.spent': 0});
-    await actor.createEmbeddedDocuments('ActiveEffect', [{name: 'Infernal Ascension', img: 'icons/magic/unholy/silhouette-evil-horned-giant.webp', transfer: false,
-        description: 'Second phase: Mythic Actions are available until his next long rest.', flags: {[MODULE_ID]: {[ASCENSION]: true}}}]);
+    await refillLegendary(actor);
+    await actor.createEmbeddedDocuments('ActiveEffect', [fx({name: 'Infernal Ascension', img: 'icons/magic/unholy/silhouette-evil-horned-giant.webp', transfer: false,
+        description: 'Second phase: Mythic Actions are available until his next long rest.', flags: {[MODULE_ID]: {[ASCENSION]: true}}})]);
     const tok = tokenOf(actor);
     try {
         const anim = ['jb2a.impact.ground_crack.dark_red.01', 'jb2a.ground_cracks.dark_red.01', 'jb2a.explosion.01.dark_red'].find(p => Sequencer.Database.entryExists(p));
@@ -166,9 +187,14 @@ export async function ascend(actor) {
     } catch { /* optional */ }
     await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}),
         content: '<h3>Infernal Ascension</h3>' + esc(actor.name) + ' refuses to fall. He rises at full strength, Infernal Majesty blazes around him, and hell\'s darkness swallows the field.'});
-    const im = actor.items.find(i => i.flags?.['chris-premades']?.info?.identifier === 'infernalMajesty') ?? actor.items.find(i => /^infernal majesty/i.test(i.name));
-    const imOn = actor.effects.some(e => e.flags?.['chris-premades']?.info?.identifier === 'infernalMajestyEffect');
-    if (im && !imOn) await cpr().workflowUtils.syntheticItemRoll(im, [], {consumeUsage: false, consumeResources: false});
+    const im = actor.items.find(i => ident(i) === 'infernalMajesty') ?? actor.items.find(i => /^infernal majesty/i.test(i.name));
+    const imOn = actor.effects.some(e => ident(e) === 'infernalMajestyEffect');
+    if (im && !imOn) {
+        // v14: the item has two activities (Bonus Action and the death burst); roll the Bonus Action one.
+        const use = isCat() ? (im.system.activities.find(a => a.activation?.type === 'bonus') ?? im.system.activities.contents[0]) : null;
+        if (use) await cpr().workflowUtils.syntheticActivityRoll(use, [], {consumeUsage: false, consumeResources: false});
+        else await cpr().workflowUtils.syntheticItemRoll(im, [], {consumeUsage: false, consumeResources: false});
+    }
     const moh = actor.items.find(i => /^master of hell/i.test(i.name));
     const dark = moh?.system.activities.find(a => /darkness/i.test(a.name ?? '')) ?? moh?.system.activities.contents[0];
     if (dark) {
@@ -180,17 +206,17 @@ export async function ascend(actor) {
 async function onRest(actor, result) {
     if (!game.user.isGM || !bossOf(actor) || !(result?.longRest ?? result?.type === 'long')) return;
     await actor.update({['flags.' + MODULE_ID + '.' + FLAG + '.ascendedThisRest']: false});
-    const fx = actor.effects.filter(e => e.flags?.[MODULE_ID]?.[ASCENSION]).map(e => e.id);
-    if (fx.length) await actor.deleteEmbeddedDocuments('ActiveEffect', fx);
+    const ids = actor.effects.filter(e => e.flags?.[MODULE_ID]?.[ASCENSION]).map(e => e.id);
+    if (ids.length) await actor.deleteEmbeddedDocuments('ActiveEffect', ids);
 }
 
 export function registerBoss() {
     Hooks.on('dnd5e.preUseActivity', onPreUse);
-    Hooks.on('midi-qol.premades.postRollFinished', onRollFinished);
+    Hooks.on(HOOKS.rollFinished, onRollFinished);
     Hooks.on('preUpdateActor', onPreUpdateActor);
     Hooks.on('updateActor', onUpdateActor);
     Hooks.on('dnd5e.restCompleted', onRest);
     Hooks.on('midi-qol.preTargetDamageApplication', onTargetDamage);
     Hooks.on('updateCombat', onUpdateCombat);
-    return {ascend, bossOf, biItem, startOfTurn, syncLegendaryMax, inLair, REGEN, LEGENDARY};
+    return {ascend, bossOf, biItem, startOfTurn, syncLegendaryMax, inLair, isNpcBoss, legendaryMax, REGEN, LEGENDARY};
 }
