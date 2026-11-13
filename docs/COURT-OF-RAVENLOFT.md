@@ -2,7 +2,7 @@
 
 **Foundry v14:** the same Court runs on v14 since Nix Fix 1.7.0 (v14 installers in each `v14/` folder; on v14 the sheets themselves are the bosses, no "(Boss)" copies). What differs, and the v14 table test: `docs/V14-PORT-COURT.md`.
 
-BBEGs, not a party. Checklist: Party Ability Checklist artifact, campaign tab "Court of Ravenloft" (ids cr-petra, cr-sydmore, cr-dayus, cr-dracula, cr-lucian, cr-valintina; rows cr-<name>-NN).
+BBEGs, not a party. Checklist: Party Ability Checklist artifact, campaign tab "Court of Ravenloft" (ids cr-petra, cr-sydmore, cr-dayus, cr-dracula, cr-lucian, cr-valintina, cr-juggernaut, cr-octavian, cr-zadimus; rows cr-<name>-NN). 2026-11-11: rows rewritten for the boss stat blocks (sections Stat Block, Legendary Actions, Lair & Mythic Actions, Boss Traits, Seals & Burns, Traits & Actions); all reset to untested.
 Exports: Foundry 13.348, dnd5e 5.3.3 (Dayus 5.1.10: open his sheet once to migrate).
 Juggernaut (RavenLoft Vampires folder): export received 2026-11-09. CR 20 construct (Titan), Huge, colossus statblock. No automation yet (see "Juggernaut sheet notes").
 
@@ -15,6 +15,8 @@ Juggernaut (RavenLoft Vampires folder): export received 2026-11-09. CR 20 constr
 | Lucian | Illrigger 15 Hellspeaker | 18 | 6 (3d6) | 8 |
 | Valintina | Illrigger 15 Architect of Ruin (Unfettered) | 18 | 6 (3d6) | 8 |
 | Juggernaut | CR 20 construct (colossus) | | | |
+| Father Octavian (captain) | Illrigger 7 Architect of Ruin (Unfettered) | 16 | 5 (2d6 +5) | 4 |
+| Zadimus (captain) | Illrigger 7 Sanguine Knight (Lies) | 16 | 5 (2d6, +1d6 True Name) | 4 |
 
 ## Decisions (Nix)
 - Seals stay visible to everyone (normal effect icon), like CPR.
@@ -23,6 +25,7 @@ Juggernaut (RavenLoft Vampires folder): export received 2026-11-09. CR 20 constr
 - Juggernaut joins the Court.
 - 2026-11-09: CPR's Illrigger flow is clunky (too many pop-ups). Nix Fix replaces it. Goal: at most one GM dialog per event.
 - 2026-11-09: Keep the place-seal prompt on the first weapon hit each turn. An attack never gets two Illrigger dialogs.
+- 2026-11-11 (1.7.1): One dialog per hit, AFTER the damage (burns, boons and the attacker's place-a-seal together). Only Deathstrike asks at the hit, when usable. Boons spend the Interdict Boons use, never an extra seal. Terrorizing Force on v13 is Nix Fix's (unarmed strikes included).
 - 2026-11-09: Blood Moon Blade's lightning damage is intended: it comes from a lair mechanic to build later. Bloodrift replaces the Blood Moon Blade.
 - 2026-11-09: Dracula's Feral Instinct is intended (advantage on initiative).
 - 2026-11-09: Run Dracula as a boss monster. Nix's ideas: seals without a count, placed with Legendary Actions; Infernal Majesty + Master of Hell: Darkness as a mythic second phase; Invoke Hell and You Die on My Command! 1/day innate; Dispater's Interdiction boons as legendary actions/reactions; Dispater's Supremacy; a cross of Blood Price and legendary actions.
@@ -86,6 +89,15 @@ Boss kit flags: Shared with Dracula's runtime (boss.mjs): `flags.nix-module.boss
 - Choices made (change on request): seals keep their pools (only Dracula unlimited); "burn" deals damage for Haemal Exchange and Submit (RAW: no "no damage" line), not for Spellbreaker; Foul Interchange may target the user himself; Bloodstroke type necrotic; Legendary Resistance 3/day; Sutekh's Blessing ignores constructs, elementals, oozes, plants, undead.
 - Not automated: Haemal Exchange on saves rolled outside Midi; counter-chains against Spellbreaker; Let's Make a Deal's "can't be cancelled by advantage"; Spellblade (activity only); Sutekh's Blessing barriers; Quid Pro Quo devil's initiative (added to combat, roll it).
 
+### Captains: Father Octavian, Zadimus (1.7.1, built 2026-11-11, needs table test)
+Illriggers 7 under the lieutenants (Nix, 2026-11-11): fixes only, **no boss kit, no Legendary Actions or Legendary Resistance**; Make stat block takes them as they are. Exports: `exports/v13/octavian.json`, `zadimus.json` (Foundry 13.348, dnd5e 5.3.3).
+- One registry slot each (`octavian` matches "Father Octavian" / "Octavian", `zadimus`): bind the character, or later his NPC stat block (same name, "(NPC)") in the same slot. Illrigger engine actors include both. Rows "<Name>: fixes (captain)", order 50/51, v13 + v14 files.
+- Generated: `tools/court-boss-build/captains-bodies.js` (`captain: true` skips the boss kit and the "(Boss)" registry slot). Shared part: `court.captain = true`; Invoke Hell RAW (the CPR "Invoke Hell" item 1/SR, both options consume it); a boon summary.
+- Octavian: Enervating Spell (`enervating`, armed effect; the runtime gate no longer requires Valintina), Spellblade (`none`), Axiomatic Seals (engine), Hellish Versatility (text; illrigger cantrips = Ray of Frost, Thaumaturgy by D&D Beyond's class source), Reborn and Staff of Charming reported. Sheet spell slots are a manual override 4/3/1 (RAW 4/2): asked Nix.
+- Zadimus: Foul Interchange (`interchange`), Sutekh's Blessing (`blessing`), Embolden Allies (`embolden`), Vitalize (`vitalize`), Lies weaponType `rapier` (`flags.nix-module.weaponType` + `flags.chris-premades.config.weaponType`), spells' casting ability set to Cha (no spellcasting class), Acheron's Chain's Baleful Interdict consumption removed (keeps the Interdict Boons 1/turn use).
+- Engine: Soul Eater on the burn row (`boonsFor` / `runBoons` in `illrigger.mjs`): temp HP = illrigger level, spends the Interdict Boons use. Runtime: `emboldenAllies` (form with a number per creature within 30 ft, total <= 5 x level, healing via the GM socket with `nixGift` so Sanguine Gift doesn't prompt), `vitalize` (effect `system.bonuses.abilities.check` +PB, 60 s). Sydmore's fixes mark both too.
+- `npcLegendary` on an NPC with no boss flags, no Legendary Actions item and no Legendary Resistance item: legact/legres 0, nothing moved. Make stat block lists captains ("(captain)"). Offline: `dev/statblock-captain.test.mjs`.
+
 ### Boss stat blocks: `court/statblock.mjs` + tool "Make stat block (boss NPC)" (Nix Fix 1.6.1, built 2026-11-10, needs table test)
 Goal (Nix, 2026-11-10): the "(Boss)" copies should look like monster stat blocks (like Juggernaut: NPC sheet, native Legendary Action / Resistance pips, a Legendary Actions section). Foundry can't change an actor's type, so the tool makes an NPC twin; the character copies stay as they are. Pilot: Dracula, then the lieutenants.
 - **What dnd5e 5.3.3 does with a class item on an NPC** (read from the system source): `system.scale` is prepared from items for every actor type, so `@scale.illrigger.*` (seal dice, Conduit) works; class levels add to `details.level`; proficiency = max(CR, level); spell slots follow the class progression. Hit Dice: an NPC tracks them on the actor (`system.attributes.hd.spent`, max = HP formula dice + class levels) and its rests only recover that, never the class item's `hd.spent`. HP: an NPC adds the class's Hit Point advancement on top of its stored max. So no flags were needed: the class item stays, Hit Dice move to the actor.
@@ -140,6 +152,21 @@ Goal (Nix, 2026-11-10): the "(Boss)" copies should look like monster stat blocks
 27. NPC Blood Price: fail a save vs a 4th-level spell: prompt shows "Hit Die +1d10 (20 left)" and "Legendary Resistance (3 left)". Hit Die: the NPC's Hit Dice go 20 -> 19. LR: a pip empties, 2d10 bleed. Long rest: Hit Dice and pips come back. (If you press "Accept the failure", dnd5e's own "Resist" button can still show on the save card: that one spends a pip without the bleed.)
 28. Drop the NPC to 0: Infernal Ascension as before, pips refilled; Hellfire Detonation (Mythic, 2) works.
 29. Then each lieutenant: Make stat block on "<Name> (Boss)", bind it in the "<Name> (Boss)" slot, re-apply the Illrigger engine, "<Name>: fixes", "<Name> (Boss): boss kit". 3 Legendary Actions (Seal, Strike, signature) in the section, 3 Legendary Resistances.
+
+30. **Captains (1.7.1).** Bind Father Octavian and Zadimus in their slots. Apply the Illrigger engine (whisper: Octavian 5 seals, 2d6, range 60, Axiomatic Seals; Zadimus 5 seals, 2d6, range 30, Exsanguinate, True Name), then each "<Name>: fixes (captain)". Read the whisper: no "not found" lines.
+31. Make stat block on each (picker shows "(captain)"): NPC sheet with **no** Legendary Action or Resistance pips, whisper "no Legendary Actions or Legendary Resistance (captain)". Bind the NPC in the same slot, re-apply the engine and the fixes.
+32. Octavian: arm Enervating Spell (Invoke Hell spent), cast Scorching Ray at a resistant target: seal spent, damage doubled. Spellblade now says no use left until a short rest. Burn his seals: +5 each, Styx's Apathy / Unleash Hell checkboxes.
+33. Zadimus: rapier attack uses Cha (+9). Burn his seals: Soul Eater checkbox (+7 temp HP, Interdict Boons use spent) and Exsanguinate. Bonus Action seal: Chris's Premades offers Acheron's Chain; it spends no extra seal. Embolden Allies: window splits 35 HP. (Invoke Hell is now spent.) Next short rest: Vitalize: +3 ability checks for 1 minute. Foul Interchange on a poisoned ally.
+
+34. **1.7.1 second batch: re-apply.** On each Court Illrigger (character, then the NPC in the same slot): "<Name>: fixes". Whisper: "Split into their own items: ..." on the first run, "already one item each" after. Then each lieutenant's boss kit on the (Boss) copy. Sheet: *Interdict Boons: <Option>* and *Invoke Hell: <Option>* rows in the right sections; the old bundles are gone.
+35. Characters / captains: use Invoke Hell: Embolden Allies, then Vitalize: refused (no use left until a short rest). (Boss) copy: each option 1/day.
+36. Lucian: Longsword attack shows Cha (no hand edit). Hellsight inside Darkness: Blinded goes, token vision mode Truesight; when it ends (still inside): blinded again, vision mode back. Honey-Sweet Blades, then attack a sealed creature: advantage, hit = crit. Turncoat on 2 enemies: Cha saves, failure charmed.
+37. Lucian: burn a seal with Unleash Hell on a necrotic-resistant creature's ally group: the splash isn't halved; purple explosion on the burned creature. Quid Pro Quo on a player: at the end of its turn the player gets a Cha save prompt; success: token back, devil gone from the map and the tracker.
+38. Terrorizing Force (v13, manual rolls): one damage dialog with the weapon dice and the d8 together, no second popup.
+39. Father Octavian: Infernal Conduit Harm (2 uses) at a creature 5 ft away: one manual roll of 2d10 first, then the target's save, damage after; he heals by the necrotic dealt. 10 ft away (no Unfettered): refused.
+40. Dayus: Vengeful Shot: one prompt (the longbow is used). Strike from the Dark on a longbow hit with advantage on a sealed creature: +PBd4.
+41. Sydmore: Crusher option: crosshair, drop the target within 5 ft.
+42. Valintina: Mage Slayer: hit a concentrating caster: "Mage Slayer: concentration" effect, its concentration save at disadvantage. Fail a Wis save: Guarded Mind prompt, yes = success, use spent.
 
 ## Watch-outs
 - Re-run the Illrigger engine after re-applying Baleful Interdict, Deathstrike or Soul's Doom in the Medkit; re-run the boss kit after re-applying any Dispater's / Invoke Hell / boon item (CPR's "created/medkit" macros point consumption back to seals).

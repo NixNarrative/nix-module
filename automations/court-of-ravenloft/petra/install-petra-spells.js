@@ -58,7 +58,7 @@ else {
         await wod.update(upd);
         report.push('<li><b>Wall of Death</b> (level ' + wod.system.level + '): ' + length + ' ft wall or ' + diameter + ' ft ring, '
             + ability.toUpperCase() + ' save, damage ' + esc(partText(part)) + '. Each turn: ending a turn inside or within ' + reach + ' ft of the chosen side, or entering the wall: '
-            + (tickSave ? 'save for half' : 'damage, no save') + ' (read from the spell text).'
+            + (tickSave ? 'save for half' : 'damage, no save') + (text.trim() ? ' (read from the spell text: <i>&ldquo;' + esc(turnLine.slice(0, 220) || 'no sentence about ending a turn found') + '&rdquo;</i>).' : ' <b>(the spell has no description here: the v13 defaults are used, one damaging side, no save on the ongoing damage).</b>')
             + (bothSides ? ' <b>The text says both sides hurt:</b> she still picks one; tell Claude if both should.' : '')
             + (part ? '' : ' <b>No damage on the save activity: fix the spell first.</b>') + '</li>');
     }

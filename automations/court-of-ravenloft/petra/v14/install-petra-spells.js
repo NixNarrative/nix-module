@@ -81,7 +81,7 @@ else {
         await wod.update(upd);
         report.push('<li><b>Wall of Death</b> (level ' + wod.system.level + '): ' + length + ' ft wall or ' + diameter + ' ft ring, '
             + ability.toUpperCase() + ' save, damage ' + esc(partText(part)) + '. Each turn: ending a turn inside or within ' + reach + ' ft of the chosen side, or entering the wall: '
-            + (tickSave ? 'save for half' : 'damage, no save') + (emptyText(wod) ? ' (the v14 description is empty: v13 defaults)' : ' (read from the spell text)') + '.'
+            + (tickSave ? 'save for half' : 'damage, no save') + (emptyText(wod) ? ' <b>(the v14 description is empty: v13 defaults, one damaging side, no save on the ongoing damage)</b>' : ' (read from the spell text: <i>&ldquo;' + esc(turnLine.slice(0, 220) || 'no sentence about ending a turn found') + '&rdquo;</i>)') + '.'
             + (hadCpr2 ? ' Chris\'s Premades 2\'s Wall of Death automation removed' + (gone.length ? ' (with its ' + gone.length + ' extra activit' + (gone.length === 1 ? 'y' : 'ies') + ')' : '') + '; Revert brings it back.' : '')
             + (bothSides ? ' <b>The text says both sides hurt:</b> she still picks one; tell Claude if both should.' : '')
             + (part ? '' : ' <b>No damage on the save activity: fix the spell first.</b>') + '</li>');

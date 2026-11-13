@@ -67,8 +67,11 @@ async function ensureActivity(item, name, type, data) {
     return actByName(item, name);
 }
  
-const isLuckyFeat = i => i.type === 'feat' && lc(i.name).startsWith('lucky') && !/footwork/i.test(i.name)
-    && (i.system.type?.value === 'feat' || /luck point/i.test(i.system.description?.value ?? ''));
+// 1.7.1: also a "Lucky" feat with no feat type and no description (Valintina's: an old sample item),
+// but not the Halfling trait (a species feature, or "roll a 1" in its text).
+const isLuckyFeat = i => i.type === 'feat' && /^lucky\b/i.test(i.name) && !/footwork/i.test(i.name)
+    && !['race', 'species', 'class', 'subclass'].includes(i.system.type?.value)
+    && !/halfling|roll a 1\b|rolls? a 1 on/i.test(i.system.description?.value ?? '');
 const premade = i => {
     const cat = i.flags?.cat ?? {};
     return cat.automation?.source === 'chris-premades' || Object.values(cat.macros ?? {}).flat().some(m => m?.source === 'chris-premades');

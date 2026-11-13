@@ -8,7 +8,10 @@
 //   Dayus (Shadowmaster):  Marked for Death, Strike from the Dark, Veil of Lies, Piercer,
 //                          Slow (weapon mastery).
 //   Sydmore (Sanguine Knight): Sutekh's Blessing, Foul Interchange, Sanguine Gift,
-//                          Bloodstroke, Haemal Exchange.
+//                          Bloodstroke, Haemal Exchange, Embolden Allies, Vitalize.
+//   Captains (1.7.1, no boss kit): Father Octavian (Architect of Ruin 7: Enervating Spell)
+//                          and Zadimus (Sanguine Knight 7: Foul Interchange, Sutekh's Blessing,
+//                          Embolden Allies, Vitalize) use the same kinds.
 //   Valintina (Architect of Ruin): Spellbreaker (Spell Duel), Submit, Enervating Spell,
 //                          Vile Transmogrification, Hellfire Cantrip (legendary).
 //   Lucian (Hellspeaker):  Charm Enemy, Intransigent, Let's Make a Deal, Slippery Ploy,
@@ -19,8 +22,8 @@
 //  module socket to the active GM (gm(action, data)). Questions go to the active GM.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
-import {biItem, cfgOf, executeRow, isActiveGM, living, placeSeal, sealsOn, tokenOf} from './illrigger.mjs';
-import {cpr, fxAll, MODES, HOOKS} from './engine.mjs';
+import {biItem, cfgOf, executeRow, isActiveGM, living, placeSeal, sealsOf, sealsOn, tokenOf} from './illrigger.mjs';
+import {cpr, fxAll, isCat, MODES, HOOKS} from './engine.mjs';
 
 export const FLAG = 'court';
 const CHANNEL = 'module.' + MODULE_ID;
@@ -95,7 +98,7 @@ const HANDLERS = {
     },
     async removeSeals({owner, token, n = 1}) {
         const t = tokFrom(token);
-        const mine = sealsOn(t?.actor).get(owner)?.effects ?? [];
+        const mine = sealsOf(t?.actor, actorFrom(owner));
         const ids = mine.slice(0, n).map(e => e.id);
         if (ids.length) await t.actor.deleteEmbeddedDocuments('ActiveEffect', ids);
         return ids.length;
@@ -115,6 +118,8 @@ const HANDLERS = {
     async deleteEffect({actor, id}) { const a = actorFrom(actor); await a?.effects.get(id)?.delete().catch(() => {}); return true; },
     async update({uuid, data, options}) { const d = actorFrom(uuid); if (d) await d.update(data, options ?? {}); return true; }
 };
+// Other Court files add their own GM-side actions (illrigger-spells.mjs: vbAttack).
+export function addGmHandler(name, fn) { HANDLERS[name] = fn; }
 const waiting = new Map();
 export function gm(action, data) {
     if (isActiveGM()) return Promise.resolve(HANDLERS[action](data)).catch(err => { console.error(TITLE + ' | court ' + action, err); return null; });
@@ -135,14 +140,16 @@ function onSocket(msg) {
 const addEffect = (actor, data) => gm('effect', {actor: actor.uuid, data});
 
 // ---------------------------------------------------------------- dialogs
-async function ask(title, content, buttons) {
+export async function ask(title, content, buttons) {
     const u = cpr()?.dialogUtils;
     if (!u) return null;
     return u.buttonDialog(title, content, buttons, {userId: gmId()});
 }
 // GM-local form: rows of checkboxes / selects. fields: [{name, label, type: 'check'|'select', options:[[value,label]], checked}]
-async function form(title, intro, fields) {
-    const html = '<div class="nix-illrigger">' + (intro ? '<p>' + intro + '</p>' : '') + fields.map(f => f.type === 'select'
+export async function form(title, intro, fields) {
+    const html = '<div class="nix-illrigger">' + (intro ? '<p>' + intro + '</p>' : '') + fields.map(f => f.type === 'number'
+        ? '<p><label>' + esc(f.label) + ' <input type="number" name="' + f.name + '" min="0" step="1" value="' + (Number(f.value) || 0) + '" style="width:5em"></label></p>'
+        : f.type === 'select'
         ? '<p><label>' + esc(f.label) + ' <select name="' + f.name + '">' + f.options.map(([v, l]) => '<option value="' + esc(v) + '">' + esc(l) + '</option>').join('') + '</select></label></p>'
         : '<p><label><input type="checkbox" name="' + f.name + '"' + (f.checked ? ' checked' : '') + '> ' + esc(f.label) + '</label></p>').join('') + '</div>';
     const r = await foundry.applications.api.DialogV2.wait({
@@ -150,7 +157,7 @@ async function form(title, intro, fields) {
         buttons: [
             {action: 'ok', label: 'Apply', icon: 'fa-solid fa-check', default: true, callback: (ev, button) => {
                 const out = {};
-                for (const f of fields) { const el = button.form.elements[f.name]; out[f.name] = f.type === 'select' ? el?.value : !!el?.checked; }
+                for (const f of fields) { const el = button.form.elements[f.name]; out[f.name] = f.type === 'select' ? el?.value : f.type === 'number' ? Math.max(0, Math.floor(Number(el?.value) || 0)) : !!el?.checked; }
                 return out;
             }},
             {action: 'skip', label: 'Skip', icon: 'fa-solid fa-xmark', callback: () => null}
@@ -170,7 +177,7 @@ async function rollSaveLocal(owner, tokens, ability, dc, name, img) {
     const wf = await cpr().workflowUtils.syntheticItemDataRoll(itemData, owner, tokens);
     return new Set(Array.from(wf?.failedSaves ?? []).map(t => tokUuid(t)));
 }
-const rollSave = async (owner, tokens, ability, dc, name, img) =>
+export const rollSave = async (owner, tokens, ability, dc, name, img) =>
     new Set(await gm('save', {owner: owner.uuid, tokens: tokens.map(tokUuid), ability, dc, name, img}) ?? []);
 
 // ---------------------------------------------------------------- light (Westly's check)
@@ -215,7 +222,7 @@ async function markedForDeath(wf) {
     const a = wf.actor;
     if (keyOf(a) !== 'dayus' || !isAttack(wf) || !isTurnOf(a) || markedTurn.get(a.uuid) === turnKey()) return;
     const t = wf.targets?.first?.();
-    if (!t?.actor || !sealsOn(t.actor).has(a.uuid)) return;
+    if (!t?.actor || !(sealsOf(t.actor, a).length > 0)) return;
     markedTurn.set(a.uuid, turnKey());
     await a.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Marked for Death', img: 'icons/skills/targeting/crosshair-pointed-orange.webp', transfer: false,
         duration: {turns: 1}, changes: [{key: 'flags.midi-qol.advantage.attack.all', mode: OV(), value: '1', priority: 20}],
@@ -225,8 +232,9 @@ async function dayusDamage(wf) {
     const a = wf.actor, lt = ltOf(a);
     if (keyOf(a) !== 'dayus' || !wf.hitTargets?.size || wf.item?.type !== 'weapon') return;
     const t = wf.hitTargets.first();
-    // Strike from the Dark: once per turn, melee weapon hit with advantage on an interdicted creature.
-    if (attackType(wf, 'meleeWeaponAttack') && darkTurn.get(a.uuid) !== (turnKey() ?? 'x') && t?.actor && sealsOn(t.actor).has(a.uuid)
+    // Strike from the Dark: once per turn, a weapon hit (melee or ranged: Nix's call, 2026-11-12; RAW melee)
+    // with advantage on an interdicted creature.
+    if ((attackType(wf, 'meleeWeaponAttack') || attackType(wf, 'rangedWeaponAttack') || wf.activity?.type === 'attack') && darkTurn.get(a.uuid) !== (turnKey() ?? 'x') && t?.actor && (sealsOf(t.actor, a).length > 0)
         && (wf.advantage || wf.attackRoll?.options?.advantageMode > 0)) {
         darkTurn.set(a.uuid, turnKey() ?? 'x');
         const lvl = lightAt(t);
@@ -339,7 +347,7 @@ async function haemalAttack(wf) {
     if (margin < 0 || margin >= 8) return;
     for (const s of court('sydmore')) {
         const sa = s.actor;
-        if (!ltOf(sa)?.haemal || !sealsOn(wf.actor).has(sa.uuid) || !canReact(sa) || dist(s, wf.token) > 60 || !canSee(s, wf.token)) continue;
+        if (!ltOf(sa)?.haemal || !(sealsOf(wf.actor, sa).length > 0) || !canReact(sa) || dist(s, wf.token) > 60 || !canSee(s, wf.token)) continue;
         const r = await haemal(sa, s, wf.token, wf.actor.name + ' attacks ' + t.document.name + ': ' + wf.attackRoll.total + ' vs AC ' + ac + '.');
         if (r) {
             await cpr().workflowUtils.bonusAttack(wf, '-' + r);
@@ -353,7 +361,7 @@ async function haemalSaves(wf) {
         const sa = s.actor;
         if (!ltOf(sa)?.haemal || !canReact(sa)) continue;
         for (const t of wf.targets) {
-            if (!t.actor || !sealsOn(t.actor).has(sa.uuid) || dist(s, t) > 60 || !canSee(s, t)) continue;
+            if (!t.actor || !(sealsOf(t.actor, sa).length > 0) || dist(s, t) > 60 || !canSee(s, t)) continue;
             const r = await haemal(sa, s, t, t.document.name + ' is about to save against ' + wf.item.name + '.');
             if (r) {
                 await addEffect(t.actor, {name: 'Haemal Exchange (−' + r + ')', img: 'icons/magic/unholy/orb-drain-red.webp', transfer: false, duration: {rounds: 1},
@@ -424,11 +432,63 @@ async function sanguineGift(actor, gain) {
     }
 }
 
+// Invoke Hell (Sanguine Knight): Embolden Allies and Vitalize (Sydmore, Zadimus; 1.7.1).
+const near30 = actor => { const me = tokenOf(actor); return me ? canvas.tokens.placeables.filter(t => t.actor && (t === me || (dist(me, t) <= 30 && canSee(me, t)))) : []; };
+async function emboldenAllies(actor) {
+    const pool = 5 * levelOf(actor), me = tokenOf(actor);
+    const cands = near30(actor).filter(t => !t.actor.statuses?.has('dead'))
+        .sort((a, b) => (b === me) - (a === me) || (b.document.disposition === me?.document.disposition) - (a.document.disposition === me?.document.disposition));
+    if (!cands.length) return ui.notifications.warn('Embolden Allies: no token for ' + actor.name + ' on the scene.');
+    const hurt = t => Math.max(0, (t.actor.system.attributes.hp.max ?? 0) - (t.actor.system.attributes.hp.value ?? 0));
+    // Suggested split: allies (him first), most hurt first, until the pool runs out.
+    let left = pool;
+    const fields = cands.map(t => {
+        const ally = t === me || t.document.disposition === me?.document.disposition;
+        const v = ally ? Math.min(left, hurt(t)) : 0;
+        left -= v;
+        return {name: t.id, type: 'number', value: v, label: t.document.name + ' (' + t.actor.system.attributes.hp.value + '/' + t.actor.system.attributes.hp.max + ')'};
+    });
+    for (;;) {
+        const pick = await form('Invoke Hell: Embolden Allies', 'Split ' + pool + ' hit points (5 x his illrigger level) between ' + esc(actor.name) + ' and creatures within 30 ft.', fields);
+        if (!pick) return say(actor, '<b>Embolden Allies:</b> no healing given (the Invoke Hell use is spent; give it back on the sheet if you cancelled by mistake).');
+        const total = cands.reduce((n, t) => n + (pick[t.id] || 0), 0);
+        if (total > pool) { ui.notifications.warn('Embolden Allies: ' + total + ' is more than ' + pool + '.'); fields.forEach(f => f.value = pick[f.name]); continue; }
+        const lines = [];
+        for (const t of cands) {
+            const n = pick[t.id] || 0;
+            if (!n) continue;
+            const hp = t.actor.system.attributes.hp, got = Math.min(n, Math.max(0, hp.max - hp.value));
+            await gm('update', {uuid: t.actor.uuid, data: {'system.attributes.hp.value': hp.value + got}, options: {nixGift: true}});
+            lines.push(esc(t.document.name) + ' +' + got + (got < n ? ' (' + n + ', capped at max)' : ''));
+        }
+        return say(actor, '<b>Invoke Hell: Embolden Allies:</b> ' + (lines.length ? lines.join(', ') : 'no one') + '.');
+    }
+}
+async function vitalize(actor) {
+    const me = tokenOf(actor), bonus = pb(actor);
+    const cands = near30(actor).filter(t => !isDown(t.actor));
+    if (!cands.length) return ui.notifications.warn('Vitalize: no token for ' + actor.name + ' on the scene.');
+    const pick = await form('Invoke Hell: Vitalize', 'Creatures of his choice within 30 ft add +' + bonus + ' to ability checks for 1 minute.',
+        cands.map(t => ({name: t.id, label: t.document.name, checked: t === me || t.document.disposition === me?.document.disposition})));
+    if (!pick) return;
+    const got = [];
+    for (const t of cands.filter(t => pick[t.id])) {
+        await addEffect(t.actor, {name: 'Vitalize', img: 'icons/magic/life/heart-glowing-red.webp', transfer: false, origin: actor.uuid, duration: {seconds: 60},
+            description: '+' + bonus + ' to ability checks (' + actor.name + '\'s Invoke Hell: Vitalize).',
+            changes: [{key: 'system.bonuses.abilities.check', mode: ADD(), value: '+' + bonus, priority: 20}]});
+        got.push(esc(t.document.name));
+    }
+    await say(actor, '<b>Invoke Hell: Vitalize:</b> ' + (got.join(', ') || 'no one') + ' add +' + bonus + ' to ability checks for 1 minute.');
+}
+
 // =====================================================================
 //  VALINTINA
 // =====================================================================
 function castLevelOf(wf) { return Number(wf.castData?.castLevel ?? wf.item?.system?.level ?? 0); }
-const illriggerSpell = item => item?.type === 'spell' && (!item.system.sourceClass || /illrigger/i.test(item.system.sourceClass));
+// Her illrigger spells: the spell's class (dnd5e 4: sourceClass; 5: sourceItem "class:<id>"; D&D Beyond flag)
+// is the Illrigger, or it has none (a stat block's spells).
+const spellClass = item => String(item?.system?.sourceClass || item?.system?.sourceItem || item?.flags?.ddbimporter?.dndbeyond?.class || '');
+const illriggerSpell = item => item?.type === 'spell' && (!spellClass(item) || /illrigger/i.test(spellClass(item)));
 const spellMod = a => {
     const ab = a.system.attributes?.spellcasting;
     if (ab && a.system.abilities?.[ab]) return a.system.abilities[ab].mod;
@@ -443,9 +503,13 @@ async function spellbreaker(wf) {
     wf.nixSpellbreaker = true;
     for (const v of court('valintina')) {
         const va = v.actor;
-        if (!ltOf(va)?.spellbreaker || v === wf.token || !canReact(va) || dist(v, wf.token) > 60 || !canSee(v, wf.token)) continue;
-        const have = sealsOn(wf.actor).get(va.uuid)?.effects.length ?? 0;
+        if (!ltOf(va)?.spellbreaker || v === wf.token) continue;
+        const have = sealsOf(wf.actor, va).length;
         if (!have) continue;
+        // Carrying her seals but not offered: say why (1.7.1 table test: "no prompt").
+        const why = isDown(va) ? 'she is down' : usedReaction(va) ? 'her reaction is used' : dist(v, wf.token) > 60 ? 'more than 60 ft away'
+            : !canSee(v, wf.token) ? 'she can\'t see the caster' : null;
+        if (why) { await whisperGM('<b>Spellbreaker (' + esc(va.name) + '):</b> ' + esc(wf.actor.name) + ' casts ' + esc(wf.item.name) + ' carrying ' + have + ' of her seals, not offered: ' + why + '.'); continue; }
         const buttons = Array.from({length: have}, (_, i) => ['Burn ' + (i + 1) + ' seal' + (i ? 's' : '') + ': Counterspell at level ' + (3 + i), i + 1]).concat([['No', false]]);
         const n = await ask('Spellbreaker (' + va.name + ')', wf.actor.name + ' is casting a spell! Burn seals on them (no damage) to cast Counterspell with no slot? Spell Duel: d20 + Cha + counter level.', buttons);
         if (!n) continue;
@@ -473,11 +537,12 @@ async function spellbreaker(wf) {
 }
 async function submit(wf) {
     const a = wf.actor;
-    if (keyOf(a) !== 'valintina' || !ltOf(a)?.submit || !illriggerSpell(wf.item) || !isSaveAct(wf)) return;
-    const cand = Array.from(wf.targets ?? []).filter(t => t.actor && (sealsOn(t.actor).get(a.uuid)?.effects.length ?? 0) >= 2);
+    if (keyOf(a) !== 'valintina' || !ltOf(a)?.submit || wf.item?.type !== 'spell' || !isSaveAct(wf)) return;
+    const cand = Array.from(wf.targets ?? []).filter(t => t.actor && sealsOf(t.actor, a).length >= 2);
     if (!cand.length) return;
+    if (!illriggerSpell(wf.item)) return whisperGM('<b>Submit:</b> ' + esc(wf.item.name) + ' isn\'t one of her illrigger spells (its class is ' + esc(spellClass(wf.item)) + '), not offered.');
     const pick = await form('Submit', 'Burn two of ' + esc(a.name) + '\'s seals on a creature: it has disadvantage on its save against ' + esc(wf.item.name) + '.',
-        cand.map(t => ({name: t.id, label: t.document.name + ' (' + sealsOn(t.actor).get(a.uuid).effects.length + ' seals)'})).concat([
+        cand.map(t => ({name: t.id, label: t.document.name + ' (' + sealsOf(t.actor, a).length + ' seals)'})).concat([
             {name: 'type', label: 'Burn as', type: 'select', options: [['necrotic', 'necrotic'], ['fire', 'fire']]}]));
     if (!pick) return;
     for (const t of cand.filter(t => pick[t.id])) {
@@ -487,27 +552,63 @@ async function submit(wf) {
     }
 }
 // Enervating Spell: armed by its activity (1/day); the next damaging illrigger spell of 1st level+ spends a seal.
+// 1.7.1 table test: the vulnerability came off at the end of the workflow, before damage applied from the
+// card landed. It now stays until that creature takes damage (or 1 round), and a skipped spell says why.
+const damageTypesOf = wf => {
+    const out = new Set((wf.damageRolls ?? []).map(r => r.options?.type).filter(Boolean));
+    for (const p of wf.activity?.damage?.parts ?? []) for (const t of p.types ?? []) out.add(t);
+    for (const t of ['healing', 'temphp', 'midi-none', 'none']) out.delete(t);
+    return Array.from(out);
+};
 async function enervate(wf) {
     const a = wf.actor;
     const armed = a?.effects.find(e => e.flags?.[MODULE_ID]?.enervating);
-    if (!armed || keyOf(a) !== 'valintina' || !illriggerSpell(wf.item) || castLevelOf(wf) < 1 || !(wf.hitTargets?.size || wf.targets?.size)) return;
-    const types = Array.from(new Set((wf.damageRolls ?? []).map(r => r.options?.type).filter(t => t && !['healing', 'temphp'].includes(t))));
-    if (!types.length) return;
-    if (!await spendSealsLocal(a, 1)) { ui.notifications.warn('Enervating Spell: no seals left (still armed).'); return; }
+    if (!armed || wf.item?.type !== 'spell' || wf.nixEnervateDone) return;
+    wf.nixEnervateDone = true;
+    const skip = why => whisperGM('<b>Enervating Spell (' + esc(a.name) + '):</b> not used on ' + esc(wf.item.name) + ': ' + why + '. Still armed.');
+    if (!illriggerSpell(wf.item)) return skip('not one of her illrigger spells (class ' + esc(spellClass(wf.item)) + ')');
+    if (castLevelOf(wf) < 1) return skip('a cantrip (1st level or higher only)');
+    const targets = Array.from(wf.hitTargets?.size ? wf.hitTargets : wf.targets ?? []).filter(t => t.actor);
+    if (!targets.length) return skip('no targets');
+    const types = damageTypesOf(wf);
+    if (!types.length) return skip('it deals no damage');
+    if (!await spendSealsLocal(a, 1)) return skip('no seals left in her pool');
     await armed.delete();
     const made = [];
     const [self] = await a.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Enervating Spell (casting)', img: 'icons/magic/unholy/projectile-helix-blood-red.webp', transfer: false,
+        duration: {rounds: 1, seconds: 6},
         changes: types.flatMap(t => [{key: 'system.traits.idr.value', mode: ADD(), value: t, priority: 20}, {key: 'system.traits.idi.value', mode: ADD(), value: t, priority: 20}]),
-        flags: {[MODULE_ID]: {transient: true}}}]));
-    made.push({actor: a.uuid, id: self.id});
-    for (const t of (wf.hitTargets?.size ? wf.hitTargets : wf.targets)) {
-        if (!t.actor) continue;
-        const id = await addEffect(t.actor, {name: 'Enervating Spell', img: 'icons/magic/unholy/projectile-helix-blood-red.webp', transfer: false, duration: {seconds: 6},
-            changes: types.map(x => ({key: 'system.traits.dv.value', mode: ADD(), value: x, priority: 20})), flags: {[MODULE_ID]: {transient: true}}});
+        flags: {[MODULE_ID]: {transient: true, enervateTemp: {caster: true}}}}]));
+    for (const t of targets) {
+        const id = await addEffect(t.actor, {name: 'Enervating Spell', img: 'icons/magic/unholy/projectile-helix-blood-red.webp', transfer: false, duration: {rounds: 1, seconds: 6},
+            description: 'Vulnerable to ' + types.join(', ') + ' from ' + a.name + '\'s ' + wf.item.name + ' (ends when the damage lands).',
+            changes: types.map(x => ({key: 'system.traits.dv.value', mode: ADD(), value: x, priority: 20})), flags: {[MODULE_ID]: {transient: true, enervateTemp: {caster: a.uuid}}}});
         if (id) made.push({actor: t.actor.uuid, id});
     }
-    wf.nixEnervate = made;
-    await say(a, '<b>Enervating Spell:</b> ' + esc(wf.item.name) + ' makes its targets vulnerable to ' + types.join(', ') + ' (resistance and immunity suppressed).');
+    // The caster's ignore-resistance goes once every target has taken the damage (or after 1 minute).
+    enervating.set(a.uuid, {self: self?.id, left: new Set(made.map(m => m.actor)), expires: Date.now() + 60000});
+    setTimeout(() => endEnervate(a.uuid, true), 60000);
+    await say(a, '<b>Enervating Spell:</b> ' + esc(wf.item.name) + ' makes ' + targets.map(t => esc(t.document.name)).join(', ') + ' vulnerable to ' + types.join(', ') + ' (resistance and immunity suppressed).');
+}
+const enervating = new Map();   // casterUuid -> {self, left: Set(targetActorUuid), expires}
+async function endEnervate(casterUuid, all = false, targetUuid = null) {
+    const e = enervating.get(casterUuid);
+    if (!e) return;
+    if (targetUuid) e.left.delete(targetUuid);
+    if (!all && e.left.size) return;
+    enervating.delete(casterUuid);
+    const caster = actorFrom(casterUuid);
+    if (e.self) await caster?.effects.get(e.self)?.delete().catch(() => {});
+    if (all) for (const t of canvas.tokens?.placeables ?? []) for (const x of t.actor?.effects ?? [])
+        if (x.flags?.[MODULE_ID]?.enervateTemp?.caster === casterUuid) await x.delete().catch(() => {});
+}
+// A target with the Enervating vulnerability took damage: the vulnerability ends (after this update).
+function enervateLanded(actor) {
+    const marks = actor.effects.filter(e => typeof e.flags?.[MODULE_ID]?.enervateTemp?.caster === 'string');
+    if (!marks.length) return;
+    setTimeout(async () => {
+        for (const m of marks) { const c = m.flags[MODULE_ID].enervateTemp.caster; await m.delete().catch(() => {}); await endEnervate(c, false, actor.uuid); }
+    }, 300);
 }
 async function vileTransmogrification(actor, which) {
     const slots = Object.entries(actor.system.spells ?? {}).filter(([k, s]) => /^spell\d$/.test(k) && s.max > 0)
@@ -545,10 +646,10 @@ async function charmEnemy(actor, target, {free = false} = {}) {
     if (!typeOf(target.actor).includes('humanoid')) return;
     const me = tokenOf(actor);
     const others = canvas.tokens.placeables.filter(t => t !== target && t.actor && typeOf(t.actor).includes('humanoid') && me && dist(me, t) <= 30
-        && (sealsOn(t.actor).get(actor.uuid)?.effects.length ?? 0) > 0);
+        && sealsOf(t.actor, actor).length > 0);
     const fields = [{name: 'charm', label: 'Charm ' + target.document.name + ' (Cha save DC ' + dcOf(actor) + ', 1 hour)', checked: true}]
-        .concat(others.map(t => ({name: t.id, label: 'Burn ' + t.document.name + '\'s seals too (' + sealsOn(t.actor).get(actor.uuid).effects.length + '), then charm it', type: 'select',
-            options: [['0', 'no']].concat(Array.from({length: sealsOn(t.actor).get(actor.uuid).effects.length}, (_, i) => [String(i + 1), 'burn ' + (i + 1)])) })));
+        .concat(others.map(t => ({name: t.id, label: 'Burn ' + t.document.name + '\'s seals too (' + sealsOf(t.actor, actor).length + '), then charm it', type: 'select',
+            options: [['0', 'no']].concat(Array.from({length: sealsOf(t.actor, actor).length}, (_, i) => [String(i + 1), 'burn ' + (i + 1)])) })));
     const pick = await form('Charm Enemy (' + ce.system.uses.value + ' left)', esc(actor.name) + ' seals ' + esc(target.document.name) + '.', fields);
     if (!pick || (!pick.charm && !others.some(t => Number(pick[t.id]) > 0))) return;
     await ce.update({'system.uses.spent': (ce.system.uses.spent ?? 0) + 1});
@@ -681,9 +782,8 @@ async function quidProQuo(wf) {
     const devil = await spawnDevil(a, t).catch(err => { console.error(TITLE + ' | Quid Pro Quo devil', err); return null; });
     await t.document.update({hidden: true});
     await addEffect(t.actor, {name: 'Banished (Quid Pro Quo)', img: 'icons/magic/fire/flame-burning-skull-orange.webp', transfer: false, duration: {seconds: 60},
-        description: 'Banished to the wastes of Hell. Repeats the Charisma save at the end of each of its turns.',
-        changes: [{key: 'flags.midi-qol.OverTime', mode: OV(), value: 'turn=end, saveAbility=cha, saveDC=' + dcOf(a) + ', label=Quid Pro Quo', priority: 20}],
-        flags: {[MODULE_ID]: {quid: {owner: a.uuid, token: tokUuid(t), devil: devil?.uuid ?? null}}}});
+        description: 'Banished to the wastes of Hell. Repeats the Charisma save at the end of each of its turns (Nix Fix asks its owner to roll).',
+        flags: {[MODULE_ID]: {quid: {owner: a.uuid, token: tokUuid(t), devil: devil?.uuid ?? null, dc: dcOf(a)}}}});
     await say(a, '<b>Quid Pro Quo:</b> ' + esc(t.document.name) + ' is banished to Hell' + (devil ? ' and ' + esc(devil.name) + ' appears in its place.' : '. Place a devil jurist or horned devil there yourself (none found in the world or compendiums).'));
 }
 async function spawnDevil(lucian, at) {
@@ -703,14 +803,34 @@ async function spawnDevil(lucian, at) {
         await game.combat.createEmbeddedDocuments('Combatant', [{tokenId: tok.id, sceneId: canvas.scene.id, actorId: tok.actorId}]);
     return tok;
 }
+// End of the banished creature's turn: its Charisma save (rolled by its owner; manual rolls respected).
+// Midi's OverTime couldn't do it: the token is hidden, so it found "no targets to save".
+async function quidSave(actor) {
+    for (const e of actor.effects.filter(x => x.flags?.[MODULE_ID]?.quid)) {
+        const q = e.flags[MODULE_ID].quid, t = tokFrom(q.token);
+        const dc = Number(q.dc) || dcOf(actorFrom(q.owner)) || 15;
+        let roll = null;
+        try { roll = await cpr().rollUtils.requestRoll(t ?? actor, 'save', 'cha', {target: dc}); } catch (err) { console.error(TITLE + ' | Quid Pro Quo save', err); }
+        if (!roll) { const r = await actor.rollSavingThrow({ability: 'cha', target: dc}); roll = Array.isArray(r) ? r[0] : r; }
+        const total = Number(Array.isArray(roll) ? roll[0]?.total : roll?.total);
+        if (!Number.isFinite(total)) continue;
+        if (total >= dc) await e.delete();
+        else await say(actorFrom(q.owner), '<b>Quid Pro Quo:</b> ' + esc(t?.document?.name ?? actor.name) + ' fails its save (' + total + ' vs DC ' + dc + ') and stays in Hell.');
+    }
+}
 async function onDeleteEffect(effect) {
     const q = effect.flags?.[MODULE_ID]?.quid;
     if (!q || !isActiveGM()) return;
     const t = tokFrom(q.token);
     if (t?.document?.hidden) await t.document.update({hidden: false});
     const d = q.devil ? tokFrom(q.devil) : null;
-    if (d?.document) await d.document.delete();
-    else if (d?.delete) await d.delete();
+    const dDoc = d?.document ?? d;
+    // The devil leaves the turn order with its token.
+    for (const c of game.combats ?? []) {
+        const ids = c.combatants.filter(x => dDoc?.id && x.tokenId === dDoc.id).map(x => x.id);
+        if (ids.length) await c.deleteEmbeddedDocuments('Combatant', ids).catch(() => {});
+    }
+    if (dDoc?.delete) await dDoc.delete().catch(() => {});
     await say(actorFrom(q.owner), '<b>Quid Pro Quo:</b> ' + esc(t?.document?.name ?? 'The creature') + ' returns' + (q.devil ? ' and the devil vanishes.' : '.'));
 }
 // Red Cant (embedded macro on Moloch's Interdiction) calls this.
@@ -737,7 +857,6 @@ function onPreUse(activity) {
 }
 async function onRollFinished(wf) {
     try {
-        if (wf?.nixEnervate) for (const m of wf.nixEnervate) await gm('deleteEffect', m);
         if (wf?.nixDeal) await dealAfter(wf);
         if (!quiet(wf)) await slowMastery(wf);
         const kind = kindOf(wf?.activity), a = wf?.actor;
@@ -752,6 +871,8 @@ async function onRollFinished(wf) {
             case 'veil': return veilOfLies(a);
             case 'interchange': return foulInterchange(a, t);
             case 'blessing': return sutekhsBlessing(a);
+            case 'embolden': return emboldenAllies(a);
+            case 'vitalize': return vitalize(a);
             case 'regainSeals': case 'regainSlots': {
                 const done = await vileTransmogrification(a, kind === 'regainSeals' ? 'seals' : 'slots');
                 if (!done && wf.activity.uses?.max) await wf.item.update({['system.activities.' + wf.activity.id + '.uses.spent']: Math.max(0, (wf.activity.uses.spent ?? 1) - 1)});
@@ -782,15 +903,19 @@ async function onRollFinished(wf) {
 async function onPreamble(wf) {
     try {
         if (!wf?.actor || quiet(wf)) return;
+        // 1.7.1: also on Midi's own midi-qol.preambleComplete (awaited; false aborts the cast), once per workflow.
+        if (wf.nixCourtPreamble) return wf.aborted ? false : undefined;
+        wf.nixCourtPreamble = true;
         await markedForDeath(wf);
         await slipperyPloy(wf);
-        if (wf.aborted) return;
+        if (wf.aborted) return false;
         await spellbreaker(wf);
-        if (wf.aborted) return;
+        if (wf.aborted) return false;
         await submit(wf);
         await dealBefore(wf);
         await haemalSaves(wf);
     } catch (err) { console.error(TITLE + ' | court preamble', err); }
+    if (wf?.aborted) return false;
 }
 async function onDamageRolled(wf) {
     try { if (wf?.actor && !quiet(wf)) { await dayusDamage(wf); await enervate(wf); } }
@@ -806,6 +931,7 @@ function onUpdateActor(actor, changed, options) {
     if (mark && !(actor.system.attributes.hp.temp > 0)) mark.delete().catch(() => {});
     const before = options?.dnd5e?.hp;
     if (!before || options.isRest || options.nixGift || options.nixRegen) return;
+    if ((before.value + (before.temp || 0)) > (actor.system.attributes.hp.value + (actor.system.attributes.hp.temp || 0))) enervateLanded(actor);
     const gain = actor.system.attributes.hp.value - before.value;
     if (gain > 0) sanguineGift(actor, gain).catch(err => console.error(TITLE + ' | Sanguine Gift', err));
 }
@@ -813,12 +939,14 @@ async function onUpdateCombat(combat, changed) {
     if (!isActiveGM() || !combat.started || !('turn' in changed || 'round' in changed)) return;
     const prev = combat.combatants.get(combat.previous?.combatantId)?.actor;
     if (prev) await tickExpiring(prev.uuid).catch(err => console.error(TITLE + ' | court expiry', err));
+    if (prev?.effects.some(e => e.flags?.[MODULE_ID]?.quid)) await quidSave(prev).catch(err => console.error(TITLE + ' | Quid Pro Quo save', err));
 }
 
 export function registerLieutenants() {
     game.socket.on(CHANNEL, onSocket);
     Hooks.on('dnd5e.preUseActivity', onPreUse);
     Hooks.on(HOOKS.preambleComplete, onPreamble);
+    if (!isCat()) Hooks.on('midi-qol.preambleComplete', onPreamble);
     Hooks.on('midi-qol.premades.postWaitForAttackRoll', onAttackRolled);
     Hooks.on(HOOKS.damageRollComplete, onDamageRolled);
     Hooks.on(HOOKS.attackRollComplete, onAttackComplete);
@@ -828,5 +956,5 @@ export function registerLieutenants() {
     Hooks.on('updateActor', onUpdateActor);
     Hooks.on('updateCombat', onUpdateCombat);
     Hooks.on('nixExsanguinate', onExsanguinate);
-    return {ltOf, gm, sealsLeft, spendSeals, redCant, charmEnemy, foulInterchange, veilOfLies, lightAt};
+    return {ltOf, gm, sealsLeft, spendSeals, redCant, charmEnemy, foulInterchange, veilOfLies, lightAt, emboldenAllies, vitalize, illriggerSpell};
 }

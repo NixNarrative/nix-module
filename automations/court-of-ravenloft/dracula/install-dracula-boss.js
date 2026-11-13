@@ -18,7 +18,7 @@
 //   - Combat Mastery: Inexorable is a plain passive (save bonus), no activities.
 //   - Dispater's Interdiction split into Chris's Premades' Telekinetic Seal,
 //     By the Throat and Dispater's Supremacy (crits on 18-20 vs sealed creatures).
-//   - Terrorizing Force: Necrotic on Chris's Premades (1d8, 2d8 in Infernal Majesty).
+//   - Terrorizing Force: Necrotic, run by Nix Fix (1d8, 2d8 in Infernal Majesty).
 //   - Master of Hell: Inferno gets its Dex save. Feral Instinct renamed (advantage on initiative).
 //   - On an NPC stat block (tool "Make stat block"): native Legendary Action / Resistance pips,
 //     each Legendary Action in the Legendary Actions section, Hit Dice on the actor (1.6.1).
@@ -257,14 +257,14 @@ for (const [id, re] of [['grandStrategist', /grand strategist/i], ['punishment',
 }
 report.push('Grand Strategist, Punishment, You Die on My Command! and Devastator: 1/day each, no shared Invoke Hell use.');
 
-// ---- 7. Terrorizing Force: Necrotic on Chris's Premades ----------------------------------
+// ---- 7. Terrorizing Force: Necrotic, run by Nix Fix (1.7.1; was Chris's Premades) ---------
 const tf = find('terrorizingForce', /^terrorizing force/i);
 if (tf) {
-    const actorMacros = Array.from(new Set([...(tf.flags?.['chris-premades']?.macros?.midi?.actor ?? []), 'terrorizingForce']));
+    const actorMacros = (tf.flags?.['chris-premades']?.macros?.midi?.actor ?? []).filter(n => n !== 'terrorizingForce');
     await tf.update({'flags.chris-premades.macros.midi.actor': actorMacros, 'flags.chris-premades.info.identifier': 'terrorizingForce',
-        'flags.chris-premades.info.rules': 'legacy', 'flags.chris-premades.terrorizingForce.damageType': 'necrotic'});
+        'flags.chris-premades.info.rules': 'legacy', 'flags.chris-premades.terrorizingForce.damageType': 'necrotic', ['flags.' + MOD + '.terrorizingForce']: {damageType: 'necrotic'}});
     for (const e of tf.effects) if (!e.disabled && e.changes.some(c => /damage/i.test(c.key))) await e.update({disabled: true});
-    report.push('Terrorizing Force: +1d8 necrotic on every weapon hit (melee and ranged), 2d8 in Infernal Majesty (Chris\'s Premades). D&D Beyond\'s melee-only effect off.');
+    report.push('Terrorizing Force: +1d8 necrotic on every weapon hit (melee and ranged), 2d8 in Infernal Majesty (Nix Fix). D&D Beyond\'s melee-only effect off.');
 }
 
 // ---- 8. Master of Hell: Inferno save -----------------------------------------------------

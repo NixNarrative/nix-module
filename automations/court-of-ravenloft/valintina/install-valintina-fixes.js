@@ -22,8 +22,10 @@ async function fixOne(actor) {
     const act = (id, type, data) => ({_id: id, type, ...data});
     // The first activity (on any item) whose name matches; {item, a}.
     function findAct(re, itemRe) {
+        // 1.7.1: options split into "Interdict Boons: X" / "Invoke Hell: X" items count as their bundle.
+        const split = n => /^(interdict boons|invoke hell):\s*\S/i.test(n);
         for (const item of actor.items) {
-            if (itemRe && !itemRe.test(item.name)) continue;
+            if (itemRe && !itemRe.test(item.name) && !split(item.name)) continue;
             const a = item.system.activities?.find?.(x => re.test(x.name ?? ''));
             if (a) return {item, a};
         }
@@ -58,6 +60,7 @@ async function fixOne(actor) {
     async function feats() {
         const list = actor.items.filter(i => i.type === 'feat' && i.system.type?.value === 'feat');
         const lines = [];
+        let brawl = false;
         for (const f of list) {
             const n = f.name;
             if (/archery/i.test(n)) {
@@ -68,7 +71,7 @@ async function fixOne(actor) {
             } else if (/^piercer/i.test(n)) {
                 court.piercer = ident(f) !== 'piercer';
                 lines.push(n + ': ' + (court.piercer ? 'Nix Fix rerolls the lowest piercing die once per turn (if it rolled half or less) and adds a die on a crit.' : 'Chris\'s Premades runs it.'));
-            } else if (/weapon master/i.test(n)) {
+            } else if (/weapon master/i.test(n) && !/great weapon master/i.test(n)) {
                 const slow = actor.items.filter(i => i.type === 'weapon' && (i.system.mastery === 'slow' || (/\(slow\)/i.test(n) && /longbow/i.test(i.name))));
                 court.slowWeapons = slow.map(i => i.id);
                 lines.push(n + ': Slow on ' + (slow.map(i => i.name).join(', ') || '<b>no matching weapon</b>') + ' (a hit that deals damage: Speed −10 ft until the start of the next turn, no stacking).');
@@ -78,8 +81,22 @@ async function fixOne(actor) {
                     await setMacros(f, ['Sentinel: Guardian'], [{name: 'Sentinel: Guardian', type: 'midi-actor', pass: 'sceneRollFinished', priority: 50, macro: SENTINEL}]);
                     lines.push(n + ': Quez\'s Sentinel (an enemy within 5 ft hits someone else: reaction attack, Speed 0 on a hit). Opportunity attacks stay with Gambit\'s.');
                 }
+            } else if (/^(crusher|grappler|tavern brawler)\b/i.test(n)) {
+                // 1.7.1: one push / grapple popup per hit (scripts/court/brawl.mjs) instead of CPR's three prompts.
+                const id = /^crusher/i.test(n) ? 'crusher' : /^grappler/i.test(n) ? 'grappler' : 'tavernBrawler';
+                const list = f.flags?.['chris-premades']?.macros?.midi?.actor;
+                if (Array.isArray(list) && list.includes(id)) await f.setFlag('chris-premades', 'macros.midi.actor', list.filter(x => x !== id));
+                brawl = true;
+                lines.push(n + ': ' + ({crusher: 'push 5 ft (once per turn) in the one after-hit popup; critical-hit advantage automatic.',
+                    grappler: 'grapple (free, once per turn) in the one after-hit popup; advantage against the creature he grapples automatic.',
+                    tavernBrawler: 'push 5 ft (once per turn) in the one after-hit popup; rerolling 1s stays on the feat.'})[id]
+                    + (Array.isArray(list) && list.includes(id) ? ' (Chris\'s Premades\' prompt switched off)' : ''));
+            } else if (/^mage slayer\b/i.test(n)) {
+                lines.push(n + ': built in (see Mage Slayer below).');
             } else lines.push(n + ': ' + (ident(f) ? 'Chris\'s Premades runs it.' : 'sheet only (no automation needed or none built).'));
         }
+        await actor.update({['flags.' + MOD + '.brawl']: brawl});
+        if (brawl) lines.push('<b>One popup per hit:</b> push (Tavern Brawler or Crusher) <i>or</i> grapple (Grappler), shown in the Baleful Interdict window when that opens too.');
         report.push('Feats: ' + (lines.length ? '<ul><li>' + lines.join('</li><li>') + '</li></ul>' : 'none on the sheet.'));
     }
 
@@ -92,6 +109,241 @@ async function fixOne(actor) {
         if (Object.keys(upd).length) await actor.update(upd);
     }
 
+
+    // ---- Illrigger spells (1.7.1): Vengeful Blade and Hell's Lash run by Nix Fix (scripts/court/illrigger-spells.mjs)
+    async function illriggerSpells() {
+        const acts = it => it.system.activities?.contents ?? Array.from(it.system.activities ?? []);
+        const vb = actor.items.find(i => i.type === 'spell' && /^vengeful blade/i.test(i.name));
+        if (vb) {
+            const keep = acts(vb).find(a => a.flags?.[MOD]?.court === 'vengefulBlade');
+            const drop = {};
+            for (const a of acts(vb)) if (a !== keep) drop['system.activities.-=' + a.id] = null;
+            if (Object.keys(drop).length) await vb.update(drop);
+            if (!keep) await vb.update({'system.activities.nixVengefulBld0': {_id: 'nixVengefulBld0', type: 'utility', name: 'Vengeful Blade',
+                activation: {type: 'action', value: 1, override: true}, range: {units: 'ft', value: '5', override: true},
+                target: {affects: {type: 'creature', count: '1'}, override: true}, consumption: {spellSlot: false, targets: []}, effects: [],
+                flags: {[MOD]: {court: 'vengefulBlade'}}}});
+            report.push('Vengeful Blade: one button. Target a creature within 5 ft, cast it, pick the weapon: on a hit +necrotic and the aura; its next attack or spell costs it the aura\'s necrotic (RAW), ends at the start of ' + actor.name + '\'s next turn.');
+        }
+        const hl = actor.items.find(i => i.type === 'spell' && /^hell'?s lash/i.test(i.name));
+        if (hl) {
+            const cast = acts(hl).find(a => a.flags?.[MOD]?.court === 'hellsLash') ?? acts(hl).find(a => a.type === 'save' && /cast/i.test(a.name ?? '')) ?? acts(hl).find(a => a.type === 'save');
+            if (cast) {
+                const drop = {};
+                for (const a of acts(hl)) if (a !== cast) drop['system.activities.-=' + a.id] = null;
+                if (Object.keys(drop).length) await hl.update(drop);
+                await hl.update({['system.activities.' + cast.id + '.flags.' + MOD + '.court']: 'hellsLash', ['system.activities.' + cast.id + '.effects']: []});
+                report.push('Hell\'s Lash: cast it as usual (Con save, 4d4 fire). A failed save tethers the target (red tether). Start of its turn: a popup to deal the 2d4 fire; end of its turn: its save to end it (burn a seal for disadvantage, offered if it carries the caster\'s seals). The Turn Start / Turn End buttons are gone.');
+            } else report.push('<b>Hell\'s Lash: no save activity found.</b>');
+        }
+    }
+
+
+    const V14 = !globalThis.chrisPremades?.utils && !!globalThis.cat?.utils;
+    const acts = it => it.system.activities?.contents ?? Array.from(it.system.activities ?? []);
+    // Strip one Chris's Premades 1 macro from an item's midi list (v13; harmless on v14).
+    async function stripCpr(item, name, path = 'midi.item') {
+        const list = foundry.utils.getProperty(item, 'flags.chris-premades.macros.' + path);
+        if (Array.isArray(list) && list.includes(name)) { await item.update({['flags.chris-premades.macros.' + path]: list.filter(n => n !== name)}); return true; }
+        return false;
+    }
+
+    // ---- 1.7.1: subclass interdict boons and Invoke Hell options, one item each ---------------
+    // D&D Beyond puts a subclass's options in one item ("Sutekh's Interdiction" > Foul Interchange,
+    // Sanguine Gift; "Invoke Hell" > Embolden Allies, Vitalize). Each becomes its own item,
+    // "Interdict Boons: <Option>" / "Invoke Hell: <Option>", with its activity (Nix Fix flags kept)
+    // and the effects it applies; the bundle is deleted ("Invoke Hell" itself stays: it holds the use).
+    async function splitBundles() {
+        const PASSIVE = /^(sanguine gift|axiomatic seals|hell'?s assassin)$/i;
+        const ACTIVATION = [[/^red cant$/i, 'special'], [/^(spellbreaker|slippery ploy)$/i, 'reaction'], [/^veil of lies$/i, 'bonus'], [/^foul interchange$/i, 'action']];
+        const pool = actor.items.find(i => /^interdict boons$/i.test(i.name));
+        const BOON_IMG = pool?.img || 'icons/skills/targeting/crosshair-triple-strike-orange.webp';
+        const optName = n => String(n ?? '').replace(/^.*?'?s interdiction:\s*/i, '').replace(/^invoke hell:\s*/i, '').replace(/\s*\(passive\)\s*$/i, '').trim();
+        const made = [], removed = [];
+        async function moveOut(bundle, a, prefix, img) {
+            const opt = optName(a.name);
+            if (!opt) return false;
+            const name = prefix + opt;
+            const passive = prefix === 'Interdict Boons: ' && PASSIVE.test(opt);
+            const existing = actor.items.find(i => i.id !== bundle.id && i.name.toLowerCase() === name.toLowerCase());
+            if (!existing) {
+                const actData = a.toObject();
+                actData.name = opt;
+                const over = ACTIVATION.find(([re]) => re.test(opt));
+                if (over) actData.activation = {...(actData.activation ?? {}), type: over[1]};
+                const effIds = (actData.effects ?? []).map(e => e._id ?? e.id).filter(Boolean);
+                const effects = passive ? [] : bundle.effects.filter(e => effIds.includes(e.id)).map(e => e.toObject());
+                await actor.createEmbeddedDocuments('Item', [{name, type: 'feat', img,
+                    system: {description: {value: bundle.system.description?.value ?? ''}, type: foundry.utils.deepClone(bundle.system.type ?? {}),
+                        source: foundry.utils.deepClone(bundle.system.source ?? {}), requirements: bundle.system.requirements ?? '',
+                        activities: passive ? {} : {[a.id]: actData}},
+                    effects, flags: {[MOD]: {split: {from: bundle.name, option: opt}}}}], {keepEmbeddedIds: true});
+                made.push(name + (passive ? ' (passive)' : ''));
+            }
+            await bundle.update({['system.activities.-=' + a.id]: null});
+            return true;
+        }
+        // Subclass interdictions (Sutekh's, Moloch's, Asmodeus's, Belial's).
+        for (const b of actor.items.filter(i => /^\w+'?s interdiction$/i.test(i.name) && !/^interdiction$/i.test(i.name))) {
+            for (const a of acts(b)) await moveOut(b, a, 'Interdict Boons: ', BOON_IMG);
+            const left = actor.items.get(b.id);
+            if (left && !acts(left).length) { await actor.deleteEmbeddedDocuments('Item', [b.id]); removed.push(b.name); }
+        }
+        // Invoke Hell bundles ("Invoke Hell", "Invoke Hell: Sanguine Knight", ...).
+        for (const b of actor.items.filter(i => /^invoke hell\b/i.test(i.name))) {
+            const opts = acts(b).filter(a => /^invoke hell:\s*\S/i.test(a.name ?? '') && optName(a.name).toLowerCase() !== optName(b.name).toLowerCase());
+            if (!opts.length) continue;
+            for (const a of opts) await moveOut(b, a, 'Invoke Hell: ', b.img);
+            const left = actor.items.get(b.id);
+            if (left && !/^invoke hell$/i.test(left.name) && !acts(left).length) { await actor.deleteEmbeddedDocuments('Item', [b.id]); removed.push(b.name); }
+        }
+        // Lucian: Slippery Ploy (13th level) had no activity at all.
+        if (/hellspeaker/i.test(actor.items.find(i => i.type === 'subclass')?.name ?? '') || actor.items.some(i => /^interdict boons:\s*red cant$/i.test(i.name))) {
+            const lvl = actor.classes?.illrigger?.system.levels ?? 0;
+            if ((lvl >= 13 || actor.type === 'npc') && !actor.items.some(i => /slippery ploy/i.test(i.name))) {
+                await actor.createEmbeddedDocuments('Item', [{name: 'Interdict Boons: Slippery Ploy', type: 'feat', img: BOON_IMG,
+                    system: {description: {value: '<p>Reaction, when an enemy targets you with an attack, spell or effect: place a seal on it; it makes a Charisma save or picks a new target (Nix Fix prompts you).</p>'},
+                        activities: {nixSlipperyPloy0: {_id: 'nixSlipperyPloy0', type: 'utility', name: 'Slippery Ploy', activation: {type: 'reaction', value: 1},
+                            range: {units: 'self'}, consumption: {targets: []}, flags: {[MOD]: {court: 'none'}}}}},
+                    flags: {[MOD]: {split: {from: 'Moloch\'s Interdiction', option: 'Slippery Ploy'}}}}]);
+                made.push('Interdict Boons: Slippery Ploy (new: reaction)');
+            }
+        }
+        // Invoke Hell use: one, back on a short or long rest, shared by the options (characters and captains).
+        // A boss (boss kit applied) keeps its options 1/day each.
+        const opts = actor.items.filter(i => /^invoke hell:\s*\S/i.test(i.name) && acts(i).length);
+        let shared = '';
+        if (opts.length && !actor.flags?.[MOD]?.boss) {
+            let base = actor.items.find(i => /^invoke hell$/i.test(i.name));
+            if (!base) [base] = await actor.createEmbeddedDocuments('Item', [{name: 'Invoke Hell', type: 'feat', img: opts[0].img,
+                system: {uses: {max: '1', spent: 0, recovery: [{period: 'sr', type: 'recoverAll'}]}}}]);
+            else if (!base.system.uses?.max) await base.update({'system.uses': {max: '1', spent: 0, recovery: [{period: 'sr', type: 'recoverAll'}]}});
+            // Its own D&D Beyond button ("Invoke Hell", spends the use and does nothing): the options do that now.
+            const own = acts(base).filter(a => !optName(a.name) || /^invoke hell$/i.test(String(a.name ?? '').trim()));
+            if (own.length) await base.update(Object.fromEntries(own.map(a => ['system.activities.-=' + a.id, null])));
+            for (const it of opts) {
+                const upd = {};
+                for (const a of acts(it)) {
+                    upd['system.activities.' + a.id + '.consumption.targets'] = [{type: 'itemUses', target: base.id, value: '1'}];
+                    upd['system.activities.' + a.id + '.uses'] = {max: '', spent: 0, recovery: []};
+                }
+                await it.update(upd);
+            }
+            shared = ' Invoke Hell: 1 use (short or long rest) shared by ' + opts.map(i => i.name.replace(/^invoke hell:\s*/i, '')).join(' and ') + '.';
+        } else if (opts.length) shared = ' Boss: the Invoke Hell options stay 1/day each (re-apply the boss kit if you just split them).';
+        report.push((made.length || removed.length)
+            ? 'Split into their own items: ' + (made.join(', ') || 'none new') + (removed.length ? '; removed ' + removed.join(', ') + ' (Revert restores)' : '') + '.' + shared
+            : 'Interdict boons / Invoke Hell options: already one item each.' + shared);
+    }
+
+    // ---- 1.7.1: Lucian's Invoke Hell options: Honey-Sweet Blades and Turncoat get working buttons
+    async function hellspeakerOptions() {
+        const hs = actor.items.find(i => /^invoke hell:\s*honey-?sweet blades$/i.test(i.name));
+        const hsAct = hs && acts(hs)[0];
+        if (hsAct) {
+            await hs.update({['system.activities.' + hsAct.id + '.flags.' + MOD + '.court']: 'honeySweet', ['system.activities.' + hsAct.id + '.effects']: [],
+                ['system.activities.' + hsAct.id + '.range']: {units: 'self'}, ['system.activities.' + hsAct.id + '.target.affects']: {type: 'self'}});
+            report.push('Invoke Hell: Honey-Sweet Blades: click it; for 1 minute his weapon attacks against a creature carrying his seal have advantage, and a hit is a critical hit.');
+        }
+        const tc = actor.items.find(i => /^invoke hell:\s*turncoat$/i.test(i.name));
+        const tcAct = tc && (acts(tc).find(a => a.type === 'save') ?? acts(tc)[0]);
+        if (tcAct) {
+            let eff = tc.effects.find(e => e.flags?.[MOD]?.turncoat);
+            const dc = 8 + (actor.system.attributes.prof ?? 0) + (actor.system.abilities.cha.mod ?? 0);
+            const ot = 'turn=end, saveAbility=cha, saveDC=' + dc + ', label=Turncoat';
+            const data = V14
+                ? {name: 'Turncoat', img: tc.img, transfer: false, statuses: ['charmed'], duration: {value: 60, units: 'seconds'}, description: 'Charmed by ' + actor.name + ' (Turncoat). Repeats the Charisma save at the end of each of its turns.',
+                    system: {changes: [{key: 'flags.midi-qol.OverTime', type: 'override', value: ot, priority: 20}]}, flags: {[MOD]: {turncoat: true}}}
+                : {name: 'Turncoat', img: tc.img, transfer: false, statuses: ['charmed'], duration: {seconds: 60}, description: 'Charmed by ' + actor.name + ' (Turncoat). Repeats the Charisma save at the end of each of its turns.',
+                    changes: [{key: 'flags.midi-qol.OverTime', mode: 5, value: ot, priority: 20}], flags: {[MOD]: {turncoat: true}}};
+            if (!eff) [eff] = await tc.createEmbeddedDocuments('ActiveEffect', [data]); else await eff.update(data);
+            const upd = {['system.activities.' + tcAct.id + '.range']: {value: '60', units: 'ft'},
+                ['system.activities.' + tcAct.id + '.target.affects']: {type: 'enemy', count: '5', choice: true},
+                ['system.activities.' + tcAct.id + '.effects']: [{_id: eff.id}]};
+            if (tcAct.type === 'save') upd['system.activities.' + tcAct.id + '.save'] = {ability: ['cha'], dc: {calculation: 'cha', formula: ''}};
+            else report.push('<b>Turncoat: its activity is not a save activity.</b>');
+            await tc.update(upd);
+            report.push('Invoke Hell: Turncoat: target up to 5 enemies within 60 ft, Charisma save DC ' + dc + '; a failure charms it for 1 minute (save again at the end of each of its turns). <i>Check the charm against the book.</i>');
+        }
+    }
+
+    // ---- 1.7.1: Combat Mastery: Lies: the weapon itself attacks with Charisma (v13 and v14) -----
+    async function liesWeapons() {
+        const lies = find('combatMasteryLies', /combat mastery:\s*lies/i);
+        if (!lies) return;
+        const owned = t => actor.items.some(i => i.type === 'weapon' && i.system.type?.baseItem === t);
+        let wt = lies.flags?.[MOD]?.weaponType;
+        const cprWt = lies.flags?.['chris-premades']?.config?.weaponType;
+        if (!wt && cprWt && owned(cprWt)) wt = cprWt;
+        if (!wt && court.liesDefault && owned(court.liesDefault)) wt = court.liesDefault;
+        if (!wt) {
+            const types = Array.from(new Set(actor.items.filter(i => i.type === 'weapon' && i.system.equipped && i.system.type?.baseItem && !/R$/.test(i.system.type?.value ?? '')).map(i => i.system.type.baseItem)));
+            if (types.length === 1) wt = types[0];
+        }
+        if (!wt) return report.push('<b>Combat Mastery: Lies: no single melee weapon type equipped</b>: set flags.nix-module.weaponType on the item (e.g. longsword).');
+        await lies.update({['flags.' + MOD + '.weaponType']: wt, 'flags.chris-premades.config.weaponType': wt});
+        const fixed = [];
+        for (const w of actor.items.filter(i => i.type === 'weapon' && i.system.type?.baseItem === wt)) {
+            const upd = {};
+            for (const a of acts(w)) if (a.type === 'attack' && a.attack?.ability !== 'cha') upd['system.activities.' + a.id + '.attack.ability'] = 'cha';
+            if (Object.keys(upd).length) await w.update(upd);
+            fixed.push(w.name);
+        }
+        report.push('Combat Mastery: Lies (' + wt + '): ' + (fixed.join(', ') || 'none') + ' attack and deal damage with Charisma (set on the weapon itself).');
+    }
+
+    // ---- 1.7.1, v13: Infernal Conduit dice rolled with the activity (one manual roll, before the save)
+    async function infernalConduitV13() {
+        if (V14) return;
+        const ic = find('infernalConduit', /^infernal conduit$/i);
+        if (!ic) return;
+        const ids = ic.flags?.['chris-premades']?.activityIdentifiers ?? {};
+        const typeOf = a => Object.entries(ids).find(([, id]) => id === a.id)?.[0] ?? (/heal/i.test(a.name ?? '') ? 'healing' : 'necrotic');
+        const upd = {};
+        for (const a of acts(ic)) {
+            if (a.type !== 'save') continue;
+            const t = typeOf(a);
+            upd['system.activities.' + a.id + '.damage.parts'] = [{number: 1, denomination: 10, bonus: '', types: [t], custom: {enabled: false, formula: ''}, scaling: {mode: 'whole', number: 1}}];
+            upd['system.activities.' + a.id + '.flags.' + MOD + '.court'] = 'conduit';
+        }
+        if (!Object.keys(upd).length) return report.push('<b>Infernal Conduit: no Heal / Harm save activities found.</b>');
+        await ic.update(upd);
+        await stripCpr(ic, 'infernalConduit');
+        report.push('Infernal Conduit: the dice (one d10 per use spent) are the activity\'s own damage, so they\'re rolled once, before the save (manual rolls ask once). Harm heals him by the necrotic dealt; Heal costs him the HP healed. Range 5 ft (30 ft with Unfettered).');
+    }
+
+    // ---- 1.7.1, v13: Vengeful Shot: one prompt (the weapon is picked for you)
+    async function vengefulShotV13() {
+        if (V14) return;
+        const vs = actor.items.find(i => ident(i) === 'interdictBoonVengefulShot' || /^interdict boons:\s*vengeful shot$/i.test(i.name));
+        if (!vs) return;
+        await stripCpr(vs, 'interdictBoonVengefulShot');
+        const upd = {};
+        for (const a of acts(vs)) upd['system.activities.' + a.id + '.flags.' + MOD + '.court'] = 'vengefulShot';
+        await vs.update(upd);
+        report.push('Vengeful Shot: target the creature, use it: the attack is made with his ranged weapon (or his only weapon) without asking; you\'re asked only if he has several that fit.');
+    }
+
+    // ---- 1.7.1: Mage Slayer (2024), built in: concentration breaker + Guarded Mind
+    async function mageSlayer() {
+        const ms = actor.items.find(i => i.type === 'feat' && /^mage slayer\b/i.test(i.name));
+        court.mageSlayer = ms?.id ?? null;
+        if (!ms) return;
+        if (!ms.system.uses?.max) await ms.update({'system.uses': {max: '1', spent: 0, recovery: [{period: 'sr', type: 'recoverAll'}]}});
+        const body = 'const ab = (typeof saveId !== "undefined" && saveId) || roll?.options?.ability || roll?.data?.abilityId;\n'
+            + 'const add = await game.modules.get("nix-module")?.api?.court?.guardedMind(me, roll, ab);\nif (!add) return;\n'
+            + 'const out = await rollUtils.addToRoll(roll, String(add), {rollData: roll.data});\nout.options.nixGuardedMind = true;\nreturn out;\n})();';
+        if (V14 && typeof setCat === 'function') {
+            await setCat(ms, ['Guarded Mind'], [{name: 'Guarded Mind', event: 'save', pass: 'actorBonus', macros: [{priority: 90,
+                macro: 'return await (async () => {\nconst me = document.parent;\nif (!roll || roll.options?.nixGuardedMind) return;\n' + body}]}]);
+        } else if (typeof setMacros === 'function') {
+            await setMacros(ms, ['Guarded Mind'], [{name: 'Guarded Mind', type: 'save', pass: 'bonus', priority: 90,
+                macro: 'return await (async () => {\nconst t = trigger;\nconst me = t.entity.actor;\nconst roll = t.roll;\nconst saveId = t.saveId;\nif (!roll || roll.options?.nixGuardedMind) return;\n' + body}]);
+        }
+        report.push('Mage Slayer: a concentrating creature ' + actor.name + ' damages makes its concentration save with disadvantage; Guarded Mind (1/short rest): when ' + actor.name + ' fails an Int, Wis or Cha save you\'re asked whether to succeed instead. Built in, so set Gambit\'s / Chris\'s Premades\' Mage Slayer to none on her (one prompt).');
+    }
+
+    await splitBundles();
 
     // ---- Character section -----------------------------------------------------------------
     court.spellbreaker = actor.items.some(i => i.system.activities?.some?.(a => /spellbreaker/i.test(a.name ?? '')) || /spellbreaker/i.test(i.name));
@@ -113,9 +365,58 @@ async function fixOne(actor) {
         await vt.update({'system.uses': {max: '', spent: 0, recovery: []}});
         report.push('Vile Transmogrification (Bonus Action, each 1/day): Regaining Seals picks a slot to spend; Regaining Spell Slots spends 3 seals per slot level. Cancel gives the use back.');
     } else report.push('<b>Vile Transmogrification not found.</b>');
+    // Shadow Fan (1.7.1 table test): one copy, charges only for its spells, 2024 spells, returns when thrown, Tessenjutsu.
+    {
+        const fans = actor.items.filter(i => i.type === 'weapon' && /^shadow fan\b/i.test(i.name));
+        if (fans.length) {
+            const score = i => (i.system.attuned ? 4 : 0) + (i.system.equipped ? 2 : 0) + (i.system.activities?.size ?? 0) / 10;
+            fans.sort((x, y) => score(y) - score(x));
+            const fan = fans[0], dupes = fans.slice(1);
+            if (dupes.length) await actor.deleteEmbeddedDocuments('Item', dupes.map(i => i.id));
+            const upd = {['flags.' + MOD + '.shadowFan']: true};
+            const notes = [];
+            // The attack spends nothing (the 3 charges are for Blur / Hypnotic Pattern).
+            for (const a of fan.system.activities) {
+                const t = a.consumption?.targets ?? [];
+                if (a.type === 'attack' && t.some(x => x.type === 'itemUses')) { upd['system.activities.' + a.id + '.consumption.targets'] = t.filter(x => x.type !== 'itemUses'); notes.push('attacks no longer spend a charge'); }
+            }
+            // Thrown, it comes back (Returning).
+            const props = new Set(fan.system.properties ?? []);
+            if (CONFIG.DND5E.itemProperties?.ret && !props.has('ret')) { props.add('ret'); upd['system.properties'] = Array.from(props); notes.push('Returning'); }
+            // Its spells: the 2024 versions (Player's Handbook 2024 if installed, else any compendium copy marked 2024 rules).
+            async function find2024(name) {
+                let best = null;
+                for (const pack of game.packs.filter(p => p.documentName === 'Item')) {
+                    const idx = await pack.getIndex({fields: ['type', 'system.source.rules']});
+                    for (const e of idx) {
+                        if (e.type !== 'spell' || e.name.toLowerCase() !== name.toLowerCase()) continue;
+                        const rank = (pack.metadata.packageName === 'dnd-players-handbook' ? 4 : 0) + (String(foundry.utils.getProperty(e, 'system.source.rules')) === '2024' ? 2 : 0) + (pack.metadata.packageType === 'world' ? 0 : 1);
+                        if (rank >= 2 && (!best || rank > best.rank)) best = {uuid: e.uuid ?? ('Compendium.' + pack.collection + '.Item.' + e._id), rank};
+                    }
+                }
+                return best?.uuid ?? null;
+            }
+            for (const a of fan.system.activities) {
+                if (a.type !== 'cast') continue;
+                const base = String(a.name ?? '').replace(/\s*\(.*$/, '').trim();
+                const uuid = base ? await find2024(base) : null;
+                if (uuid && uuid !== a.spell?.uuid) { upd['system.activities.' + a.id + '.spell.uuid'] = uuid; upd['system.activities.' + a.id + '.name'] = base + ' (Shadow Fan)'; notes.push(base + ' 2024'); }
+                else if (!uuid) notes.push('<b>no 2024 ' + base + ' found in the compendiums</b> (kept the legacy one)');
+            }
+            await fan.update(upd);
+            report.push('Shadow Fan: ' + (dupes.length ? 'duplicate deleted; ' : '') + (notes.join(', ') || 'already set') + '. Tessenjutsu: at the start of her turn, +1 AC or +1d4 necrotic on its hits (until her next turn)'
+                + (fan.system.attuned === false ? ' <b>(not attuned: attune it)</b>' : '') + '.');
+        }
+    }
 
     await enginePassives();
+    await illriggerSpells();
     await feats();
+    await hellspeakerOptions();
+    await liesWeapons();
+    await infernalConduitV13();
+    await vengefulShotV13();
+    await mageSlayer();
     await actor.update({['flags.' + MOD + '.court']: court});
     await ChatMessage.create({whisper: [game.user.id], content: '<b>Nix Fix: ' + actor.name + ' fixes</b><ul><li>' + report.join('</li><li>') + '</li></ul>'});
 }

@@ -73,6 +73,12 @@ export async function npcLegendary(actor) {
     const b = bossOf(actor);
     const la = laItem(actor), lr = lrItem(actor);
     const laHtml = la?.system.description?.value ?? '';
+    // Captains (Father Octavian, Zadimus; 1.7.1): no boss kit, so no Legendary Actions or Resistance.
+    if (!b && !la && !lr) {
+        if (Number(actor._source.system.resources?.legact?.max) || Number(actor._source.system.resources?.legres?.max))
+            await actor.update({'system.resources.legact.max': 0, 'system.resources.legact.spent': 0, 'system.resources.legres.max': 0, 'system.resources.legres.spent': 0});
+        return ['Stat block layout: no Legendary Actions or Legendary Resistance' + (actor.flags?.[MODULE_ID]?.court?.captain ? ' (captain)' : '') + '.'];
+    }
 
     // 1. Counters: Legendary Resistance pips take over the item's uses.
     const res = {};
@@ -243,7 +249,7 @@ async function lineUp(npc, src) {
 
 export async function makeStatBlock(src, {cr, rebuild = null} = {}) {
     if (!game.user.isGM) throw new Error('Only the GM can make a stat block.');
-    if (src?.type !== 'character') throw new Error('Pick a character actor (a "(Boss)" copy).');
+    if (src?.type !== 'character') throw new Error('Pick a character actor (a "(Boss)" copy or a captain).');
     const crNum = Number(cr);
     if (!Number.isFinite(crNum) || crNum < 0) throw new Error('CR must be a number (0.125, 0.25, 0.5 or 0-30).');
     const s = src.toObject();
@@ -274,7 +280,9 @@ export async function makeStatBlock(src, {cr, rebuild = null} = {}) {
     report.push(...await lineUp(npc, src));
     try { report.push(...await npcLegendary(npc)); }
     catch (err) { console.error(TITLE + ' | stat block layout', err); report.push('<b>Legendary layout failed</b> (' + esc(err.message) + '): re-apply the boss kit after binding.'); }
-    report.push('Next: in the ' + TITLE + ' window bind this NPC (listed as "' + esc(npc.name) + ' (NPC)") in the boss slot, then re-apply the Illrigger engine, the fixes and the boss kit.');
+    report.push(npc.flags?.[MODULE_ID]?.court?.captain && !bossOf(npc)
+        ? 'Next: in the ' + TITLE + ' window bind this NPC (listed as "' + esc(npc.name) + ' (NPC)") in ' + esc(npc.name) + '\'s slot, then re-apply the Illrigger engine and ' + esc(npc.name) + ': fixes.'
+        : 'Next: in the ' + TITLE + ' window bind this NPC (listed as "' + esc(npc.name) + ' (NPC)") in the boss slot, then re-apply the Illrigger engine, the fixes and the boss kit.');
     await ChatMessage.create({whisper: [game.user.id], content: '<b>' + TITLE + ': stat block for ' + esc(src.name) + '</b><ul><li>' + report.join('</li><li>') + '</li></ul>'});
     return {npc, report};
 }

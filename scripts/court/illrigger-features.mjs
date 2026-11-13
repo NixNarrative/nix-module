@@ -21,7 +21,7 @@
 //  See docs/V14-PORT-COURT.md, step 2.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
-import {cfgOf, moveSeals, placeSeal, promptBurn, sealsOn, tokenOf} from './illrigger.mjs';
+import {cfgOf, moveSeals, placeSeal, promptBurn, sealsOf, sealsOn, tokenOf} from './illrigger.mjs';
 import {canUse, fx, ident, teleport, toDoc, toObj} from './engine.mjs';
 
 export const SOURCE = MODULE_ID;
@@ -347,14 +347,29 @@ async function dissOnslaught({workflow}) {
     if (!workflow.targets?.size) return;
     await featureAttack(workflow.actor, workflow.item, workflow.targets, workflow.item.name);
 }
+// 1.7.1: one prompt. The weapon is picked for you (ranged first, one that reaches); asked only if several fit.
 async function vengefulShot({workflow}) {
     if (!workflow.targets?.size) return;
-    await featureAttack(workflow.actor, workflow.item, workflow.targets, workflow.item.name);
+    const actor = workflow.actor, t = firstTarget(workflow), me = wfToken(workflow);
+    const list = equippedWeapons(actor).filter(i => i.system.activities?.some?.(a => a.type === 'attack'));
+    if (!list.length) return;
+    const reach = w => { const r = w.system.range ?? {}; return Math.max(Number(r.long) || 0, Number(r.value) || 0, Number(r.reach) || 0, w.system.properties?.has?.('rch') ? 10 : 5); };
+    const d = me && t ? U().tokenUtils.getDistance(toDoc(me), toDoc(t)) : 0;
+    const fits = list.filter(w => reach(w) >= d);
+    const ranged = fits.filter(w => /R$/.test(w.system.type?.value ?? '') || w.system.properties?.has?.('thr'));
+    const pool = ranged.length ? ranged : (fits.length ? fits : list);
+    let w = pool[0];
+    if (pool.length > 1) {
+        const id = await U().dialogUtils.buttonDialog(workflow.item.name, 'Which weapon?', pool.map(i => [i.name, i.id]), {userId: firstOwner(actor)});
+        w = actor.items.get(id);
+        if (!w) return;
+    }
+    return U().workflowUtils.specialItemUse(w, Array.from(workflow.targets).map(toDoc), workflow.item, {consumeUsage: true, consumeResources: true});
 }
 async function impalingShot({document: item, workflow}) {
     if (!workflow.hitTargets?.size || !U().workflowUtils.isAttackType(workflow, 'rangedWeaponAttack')) return;
     const t = workflow.hitTargets.first();
-    if (!t?.actor || !sealsOn(t.actor).has(workflow.actor.uuid)) return;
+    if (!t?.actor || !(sealsOf(t.actor, workflow.actor).length > 0)) return;
     const act = item.system.activities.find(a => a.identifier === 'use') ?? item.system.activities.contents[0];
     if (!act || !canUse(item)) return;
     if (!await U().dialogUtils.confirm(item.name, 'Use ' + esc(item.name) + ' on ' + esc(t.document.name) + '?', {userId: firstOwner(workflow.actor)})) return;

@@ -60,6 +60,8 @@ export const CHARACTERS = {
     'lucian-boss': {name: 'Lucian (Boss)', campaign: 'court-of-ravenloft', match: [/^lucian\b.*\bboss\b/i]},
     valintina: {name: 'Valintina', campaign: 'court-of-ravenloft', match: [/^valintina\b(?!.*\bboss\b)/i, /^valentina\b(?!.*\bboss\b)/i]},
     'valintina-boss': {name: 'Valintina (Boss)', campaign: 'court-of-ravenloft', match: [/^valintina\b.*\bboss\b/i, /^valentina\b.*\bboss\b/i]},
+    octavian: {name: 'Father Octavian', campaign: 'court-of-ravenloft', match: [/^father\s+octavian\b/i, /^octavian\b/i]},
+    zadimus: {name: 'Zadimus', campaign: 'court-of-ravenloft', match: [/^zadimus\b/i]},
     juggernaut: {name: 'Juggernaut', campaign: 'court-of-ravenloft', match: [/^juggernaut\b/i]}
 };
  
@@ -196,7 +198,7 @@ export const ENTRIES = [
 
     // ---------------- Court of Ravenloft (v14: Nix Fix runs the Illrigger features Chris's Premades 2 doesn't have) ----------------
     {id: 'illrigger-engine', title: 'Illrigger engine (seals)', kind: 'world', file: cr('world/install-illrigger-engine.js'), campaigns: [CR], order: 20,
-        actors: ['sydmore', 'dayus', 'dracula', 'lucian', 'valintina', 'sydmore-boss', 'dayus-boss', 'lucian-boss', 'valintina-boss'], allAtOnce: true,
+        actors: ['sydmore', 'dayus', 'dracula', 'lucian', 'valintina', 'sydmore-boss', 'dayus-boss', 'lucian-boss', 'valintina-boss', 'octavian', 'zadimus'], allAtOnce: true,
         v14: {file: cr('world/v14/install-illrigger-engine.js')},
         does: 'Nix Fix runs Baleful Interdict for the Court: one GM dialog per event (place a seal on a hit, or burn with boons), any damage source can burn, per-owner dice and range, only burned seals removed. Re-run after re-applying Baleful Interdict, Deathstrike or Soul\'s Doom in the Medkit.'},
     {id: 'petra-metamagic', title: 'Petra: Metamagic fix-up', kind: 'setup', file: fj('bangiras/metamagic-fixup.js'), campaigns: [CR], actors: ['petra'], order: 30,
@@ -239,6 +241,14 @@ export const ENTRIES = [
     {id: 'valintina-boss', title: 'Valintina (Boss): boss kit', kind: 'character', file: cr('valintina/install-valintina-boss.js'), campaigns: [CR], actors: ['valintina-boss'], order: 49,
         v14: {file: cr('valintina/v14/install-valintina-boss.js'), actors: ['valintina']},
         does: 'Only on Valintina (Boss): Legendary Actions 3 (Seal, Strike, Hellfire Cantrip), Legendary Resistance 3/day + Blood Price, Invoke Hell options 1/day each. Apply Valintina: fixes first. (v14: on Valintina itself; the v14 sheet is the boss.)'},
+    {id: 'octavian-fixes', title: 'Father Octavian: fixes (captain)', kind: 'world', file: cr('octavian/install-octavian-fixes.js'), campaigns: [CR], order: 50,
+        actors: ['octavian'], allAtOnce: true,
+        v14: {file: cr('octavian/v14/install-octavian-fixes.js')},
+        does: 'Captain (no boss kit, no Legendary Actions or Resistance): Illrigger 7 Architect of Ruin: Enervating Spell, Spellblade, Axiomatic Seals, Invoke Hell shared 1/short rest, burn-dialog boons. Apply the Illrigger engine first. Make stat block takes him as he is.'},
+    {id: 'zadimus-fixes', title: 'Zadimus: fixes (captain)', kind: 'world', file: cr('zadimus/install-zadimus-fixes.js'), campaigns: [CR], order: 51,
+        actors: ['zadimus'], allAtOnce: true,
+        v14: {file: cr('zadimus/v14/install-zadimus-fixes.js')},
+        does: 'Captain (no boss kit, no Legendary Actions or Resistance): Illrigger 7 Sanguine Knight: Foul Interchange, Sutekh\'s Blessing, Embolden Allies, Vitalize, Soul Eater, Exsanguinate, Lies (rapier), Invoke Hell shared 1/short rest. Apply the Illrigger engine first. Make stat block takes him as he is.'},
     {id: 'dracula-boss', title: 'Dracula: boss kit', kind: 'character', file: cr('dracula/install-dracula-boss.js'), campaigns: [CR], actors: ['dracula'], order: 40,
         v14: {file: cr('dracula/v14/install-dracula-boss.js')},
         does: 'Legendary Actions 4 / 5 in his lair (Seal, Strike, By the Throat, Devour), Regeneration (20, stopped by 15 radiant), Infernal Conduit Devour as his bite (Bonus / Legendary 2), Infernal Ascension mythic phase + Hellfire Detonation, Blood Price / Legendary Resistance prompt (bleed scales with spell level), unlimited seals, Dispater\'s Interdiction and Invoke Hell as Chris\'s Premades items, Grand Strategist / Punishment / You Die on My Command! / Devastator 1/day, Inexorable passive, Terrorizing Force, Feral Instinct. Apply the Illrigger engine first.'},

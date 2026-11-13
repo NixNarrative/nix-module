@@ -4,7 +4,7 @@
 //  actor with the same name that looks and plays like a 2024 monster stat block:
 //  same abilities, HP, AC, saves, skills, senses, traits, spell slots and every item
 //  (the Illrigger class item too: levels, scale values and Hit Dice still count), a CR you
-//  pick, native Legendary Action / Legendary Resistance pips, and the Legendary Actions on
+//  pick (captains: no Legendary Actions or Resistance), native Legendary Action / Legendary Resistance pips, and the Legendary Actions on
 //  their own items in the Legendary Actions section. The character copy is not changed.
 //  Run it again for the same character to rebuild its NPC (stats and items replaced).
 //  Then bind the NPC in the Nix Fix window and re-apply the engine, fixes and boss kit.
@@ -14,17 +14,19 @@ const api = game.modules.get(MOD)?.api;
 if (!api?.statBlock) return ui.notifications.warn('Make stat block: the Court of Ravenloft runtime isn\'t running (v13 / Chris\'s Premades 1 only).');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const picked = canvas.tokens.controlled[0]?.actor;
-const sources = game.actors.filter(a => a.type === 'character' && (a.flags?.[MOD]?.boss || /\(boss\)/i.test(a.name)))
+// Captains (Father Octavian, Zadimus; 1.7.1): their fixes mark them, and their stat block has no Legendary Actions or Resistance.
+const isCaptain = a => !!a.flags?.[MOD]?.court?.captain;
+const sources = game.actors.filter(a => a.type === 'character' && (a.flags?.[MOD]?.boss || isCaptain(a) || /\(boss\)/i.test(a.name)))
     .sort((a, b) => a.name.localeCompare(b.name));
-if (!sources.length) return ui.notifications.warn('Make stat block: no boss character found (a character with a boss kit, or "(Boss)" in its name).');
+if (!sources.length) return ui.notifications.warn('Make stat block: no boss or captain character found (a character with a boss kit, or "(Boss)" in its name).');
 const first = sources.find(a => a.id === picked?.id) ?? sources[0];
 const crOf = a => api.statBlock.statBlocksOf(a)[0]?.system.details.cr;
 const options = sources.map(a => {
     const has = api.statBlock.statBlocksOf(a).length;
-    return '<option value="' + a.id + '"' + (a === first ? ' selected' : '') + '>' + esc(a.name) + (has ? ' (has a stat block)' : '') + '</option>';
+    return '<option value="' + a.id + '"' + (a === first ? ' selected' : '') + '>' + esc(a.name) + (isCaptain(a) ? ' (captain)' : '') + (has ? ' (has a stat block)' : '') + '</option>';
 }).join('');
-const content = '<p>Makes an NPC actor with the same name from the boss character. The character is not changed.</p>'
-    + '<div class="form-group"><label>Boss character</label><select name="source">' + options + '</select></div>'
+const content = '<p>Makes an NPC actor with the same name from the boss or captain character. The character is not changed. Captains get no Legendary Actions or Legendary Resistance.</p>'
+    + '<div class="form-group"><label>Boss or captain</label><select name="source">' + options + '</select></div>'
     + '<div class="form-group"><label>Challenge Rating</label><input type="text" name="cr" placeholder="e.g. 20" value="' + esc(crOf(first) ?? '') + '"></div>'
     + '<p class="hint">CR sets XP only: proficiency follows the class levels (or the CR, whichever is higher).</p>';
 const res = await foundry.applications.api.DialogV2.prompt({

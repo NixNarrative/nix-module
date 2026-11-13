@@ -1,7 +1,7 @@
 // =====================================================================
 //  ILLRIGGER ENGINE (Court of Ravenloft): WORLD INSTALLER (Script macro, run as GM)
-//  Nix Fix runs it on the five Court Illriggers (Sydmore, Dayus Manroe, Dracula,
-//  Lucian, Valintina). Safe to re-run.
+//  Nix Fix runs it on the Court Illriggers (Sydmore, Dayus Manroe, Dracula, Lucian,
+//  Valintina, their (Boss) copies, and the captains Father Octavian and Zadimus). Safe to re-run.
 //   - Hands Baleful Interdict over to Nix Fix's engine (scripts/court/illrigger.mjs):
 //     one GM dialog per event instead of Chris's Premades' prompt chain.
 //   - Strips Chris's Premades' hit prompt (Baleful Interdict) and burn macro (on the
@@ -9,6 +9,7 @@
 //     (Deathstrike is a checkbox in the hit dialog now).
 //   - Soul's Doom: the engine adds it to every kind of damage, so CPR's attack-only
 //     bonus is switched off (no double count). Its effect lasts 1 minute on the target.
+//   - Terrorizing Force: Nix Fix adds its die on weapon hits, unarmed strikes included (1.7.1).
 //   - Records each Illrigger's range (Unfettered 60 ft), seal dice and passives.
 // =====================================================================
 const MOD = 'nix-module';
@@ -63,7 +64,18 @@ for (const actor of actors) {
         if (!e.transfer && Number(e.duration?.seconds) !== 60) { await e.update({'duration.seconds': 60}); notes.push('Soul\'s Doom: lasts 1 minute.'); }
     }
 
-    // 4. Configuration.
+    // 4. Terrorizing Force (1.7.1): Nix Fix adds the die on every weapon hit, unarmed strikes included
+    //    (the lieutenants' D&D Beyond items did nothing on v13). Chris's Premades' macro off, so no double.
+    for (const tf of actor.items.filter(i => ident(i) === 'terrorizingForce' || /^terrorizing force/i.test(i.name))) {
+        const type = String(tf.name.match(/:\s*(cold|fire|necrotic|poison)\b/i)?.[1] ?? tf.flags?.[MOD]?.terrorizingForce?.damageType
+            ?? tf.flags?.['chris-premades']?.terrorizingForce?.damageType ?? 'fire').toLowerCase();
+        await stripMacro(tf, 'midi.actor', 'terrorizingForce');
+        if (tf.flags?.[MOD]?.terrorizingForce?.damageType !== type) await tf.update({['flags.' + MOD + '.terrorizingForce']: {damageType: type}});
+        for (const e of tf.effects) if (!e.disabled && e.changes.some(c => /damage/i.test(c.key))) await e.update({disabled: true});
+        notes.push('Terrorizing Force: +1d8 ' + type + ' on every weapon hit, unarmed strikes included (2d8 in Infernal Majesty), run by Nix Fix.');
+    }
+
+    // 5. Configuration.
     const cls = actor.items.find(i => i.type === 'class' && /illrigger/i.test(i.name));
     const unfettered = actor.items.some(i => ident(i) === 'combatMasteryUnfettered' || /unfettered/i.test(i.name));
     const trueName = actor.items.find(i => i.type === 'weapon' && /true name/i.test(i.name));
