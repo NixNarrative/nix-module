@@ -1,5 +1,37 @@
-# 1.7.1 (unreleased): Court of Ravenloft captains
-Built 2026-11-11, not table-tested. Bump `version` / `download` in module.json before uploading (new number every release).
+# 1.7.4 (2026-11-15): Court table-test fixes, no Target Confirmation on Nix Fix's own rolls
+Built 2026-11-15, not table-tested yet. Fixes from the 2026-11-15 v13 session.
+
+- **Valintina, Spellbreaker: Spell Duel added +21 instead of +3.** The button value came back as the text "1", so `2 + "1"` made "21". It's read as a number now, for the bonus and for the seals it removes. Same slip fixed in Regaining Spell Slots (it would have thrown).
+- **Bonus Action seals are counted** (Lucian, Dayus and every Court Illrigger). Midi gives the seal placed with Baleful Interdict's Bonus Action an origin of the effect *on* his Baleful Interdict item (the Effects tab shows his name as the source, so it looked like an actor origin). The engine didn't follow that, so the seal was skipped: no burn offered on the first hit, "1 of 1" with two seals on. It now resolves to its owner, counts, and gets the usual name / origin ("Baleful Interdict: <name>", his Baleful Interdict item). Seals already on a creature from before 1.7.4 are put in that form the next time one of his weapon hits on it is recorded. Shared engine, v13 and v14.
+- **No Target Confirmation on Nix Fix's own fixed-target rolls.** When Nix Fix rolls something at a creature it already picked (Hell's Lash start-of-turn fire and end-of-turn save, Vengeful Blade's trigger, burns, boons ...), Midi's Target Confirmation no longer opens; ordinary rolls still ask, as your Midi setting says. Every such synthetic roll now passes Midi's own per-roll option (`workflowOptions.targetConfirmation: 'none'`, checked in Midi's source for v13 and v14): the Court engine on v13 (Chris's Premades 1) and v14 (CAT), v14 Illrigger features, and every campaign installer (46 rolls; Eldritch Blast and Nox's Flurry had the option in a place Midi doesn't read).
+- **Valintina / Octavian, Enervating Spell covers the whole casting.** 1.7.1 ended the vulnerability on the first damage, so only the first Scorching Ray or Eldritch Blast beam got it. Now every ray / beam / target of that one casting is vulnerable; it ends when he casts something else, at the turn change, or after 60 seconds idle.
+- **Lucian, Invoke Hell: Honey-Sweet Blades and Turncoat have their buttons.** Split "Invoke Hell: <option>" / "Interdict Boons: <option>" items with no activity get one (Honey-Sweet Blades: use; Turncoat: Cha save). Every Court Illrigger's fixes.
+- **Dayus, Vengeful Shot: one pop-up** (v13). It rolls the weapon's attack itself, with no Target Confirmation, instead of Chris's Premades' item-use path that opened a second window.
+- Sydmore's Hellish Frenzy: retested 2026-11-15, works on 1.7.3; nothing changed.
+- Offline: `dev/court-engine.test.mjs` (fixed-target option on v13 and v14 adapters), `court-spells.test.mjs` (Spellbreaker with "2" / "9" / No; Enervating per casting), `court-extras.test.mjs` (Vengeful Shot), `court-hit-flow.test.mjs` (Bonus Action seal with an item-effect origin: counted, renamed; old seal normalised on a hit). All `dev/*.test.mjs` pass; v14 offline check on every Court installer (Dayus, Lucian, Sydmore, Valintina fixes + boss kits, Dracula boss kit, Octavian, Zadimus, Petra, Make stat block): 0 problems, stable over 2 runs.
+
+**To do in the world:** install 1.7.4 and reload (F5). Then re-apply: each Court Illrigger's fixes (Dayus, Lucian, Sydmore, Valintina, Father Octavian, Zadimus; character, then the NPC in the same slot) for the new buttons, and each campaign character's fixes (Quez, Earwyn, Westly's Swashbuckler 13-17, Eldritch Blast, Akira, Cordelia, Nox, Peri, Tsuki, Hellsing, Silkie) to pick up the no-confirmation option.
+
+# 1.7.3 (2026-11-13): Terrorizing Force in one damage window
+Built 2026-11-13, not table-tested yet. v13 only.
+
+- **Terrorizing Force (v13) rolls with the weapon now, like Earwyn's Radiant Strikes.** 1.7.1 added its die as a second roll inside the weapon's damage roll. Foundry resolves each roll on its own, so manual dice still opened a second Roll Resolution window. The die now goes into the weapon's own formula (`1d8 + 4 + 1d8[necrotic]`, 2d8 in Infernal Majesty): one window, one roll, doubled on a crit with the weapon dice. The damage type comes from the `[necrotic]` / `[poison]` / ... tag, the way dnd5e reads Radiant Strikes. If Midi's workflow can't be found when the damage is rolled, the die is still added (weapon damage is rolled on a hit); the separate bonus roll stays only as a fallback, and never adds it twice.
+- Offline: `dev/court-extras.test.mjs` checks the die is in the weapon's formula, there's no second roll, it isn't added twice, and a miss adds nothing. All `dev/*.test.mjs` pass.
+
+**To do in the world:** install 1.7.3 and reload (F5). No re-apply needed.
+
+# 1.7.2 (2026-11-13): Vengeful Blade fix
+Fixes 1.7.1's "fixes failed" on Dayus Manroe, Valintina and Zadimus. Built 2026-11-13, not table-tested yet.
+
+- **Vengeful Blade's button had a bad id.** 1.7.1 gave the new button the id `nixVengefulBld0`, 15 characters. Foundry needs 16, so the fixes stopped at Vengeful Blade with "_id: must be a valid 16-character alphanumeric ID". A second Apply then failed with "Cannot set properties of undefined (setting 'activations')" (Dayus, Valintina). Zadimus's Vengeful Blade went missing. The id is now `nixVengefulBlad0`. Every Court fixes installer has it (the ones without the spell never reached that line).
+- **Repair:** the fixes now start by looking for items with a bad activity id. That includes items Foundry hid as invalid, which is why Vengeful Blade vanished from Zadimus and from the NPC Make stat block made from him. They rebuild those items without the bad button, then Vengeful Blade gets its proper button. The fixes report lists what it repaired.
+- **Make stat block:** the Legendary Actions button it adds for a legendary activity on another item (Dracula's Devour) had the same 15-character problem (`nixLegendProxy0`), now `nixLegendProxy00`.
+- **Checks:** new `dev/activity-ids.test.mjs` fails on any hard-coded activity id that isn't 16 characters. The offline court check (`dev/v14-offline-check-court.mjs`, and `v14-offline-check.mjs`) now refuses a bad id the way Foundry does: 1.7.1's Dayus fixes fail there, 1.7.2's pass. It also takes hidden items (`_invalidItems` in an export); `dev/fixtures/dayus-hidden-vengeful-blade.json` checks the repair. Dayus, Valintina, Zadimus, Sydmore and Lucian v14 fixes: 0 problems, stable over 2 runs; all `dev/*.test.mjs` pass.
+
+**To do in the world:** install 1.7.2, reload (F5), then Apply the fixes on Dayus Manroe and Valintina. Zadimus: bind the Zadimus *character* in his slot, Apply his fixes (repairs the spell), run Make stat block on him again, bind the new NPC back in the slot, then re-apply the Illrigger engine and his fixes.
+
+# 1.7.1 (2026-11-12): Court of Ravenloft captains, and table-test fixes
+Partly table-tested (second batch below comes from the 2026-11-12 session). Test on a copy of the world first. Module compatibility: Foundry 13 to 14 (verified 14).
 
 - **New: two captains, Father Octavian and Zadimus** (Illrigger 7s who serve under the lieutenants). Fixes only: no boss kit, no Legendary Actions or Legendary Resistance. Registry slots `octavian` / `zadimus` (the character, or his NPC stat block bound in the same slot), the Illrigger engine runs on both, rows "Father Octavian: fixes (captain)" and "Zadimus: fixes (captain)" (v13 and v14 installers, generated by `tools/court-boss-build` from `captains-bodies.js`).
   - *Father Octavian* (Architect of Ruin, Unfettered, Reborn): Enervating Spell (click to arm), Spellblade (activity), Axiomatic Seals +5 per seal, Styx's Apathy / Unleash Hell on his burn row, seals at 60 ft.

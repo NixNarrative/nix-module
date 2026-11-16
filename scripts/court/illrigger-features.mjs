@@ -22,12 +22,15 @@
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {cfgOf, moveSeals, placeSeal, promptBurn, sealsOf, sealsOn, tokenOf} from './illrigger.mjs';
-import {canUse, fx, ident, teleport, toDoc, toObj} from './engine.mjs';
+import {canUse, fixedTargets, fx, ident, teleport, toDoc, toObj} from './engine.mjs';
 
 export const SOURCE = MODULE_ID;
 export const RULES = 'all';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const U = () => globalThis.cat.utils;
+// 1.7.4: these go to CAT directly (not through engine.mjs's cpr() adapter), so they take the same
+// "no Target Confirmation on a roll at targets Nix Fix chose" option here (engine.mjs fixedTargets).
+const roll = (targets, o) => fixedTargets(targets, o);
 const inCombat = () => !!game.combat?.started;
 const firstOwner = doc => U().queryUtils.firstOwner(doc, true) ?? game.user.id;
 const say = (actor, html) => ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: html});
@@ -74,8 +77,8 @@ async function offerBoons(actor, target, {bonus = true} = {}) {
         ?? it.system.activities.find(x => x.name && it.name.toLowerCase().includes(x.name.toLowerCase().replace(/\s*\(passive\)$/, '')))
         ?? it.system.activities.contents[0];
     const targets = target ? [toDoc(target)] : [];
-    if (act) await U().workflowUtils.syntheticActivityRoll(act, targets, {consumeUsage: true, consumeResources: true, spellSlot: false});
-    else await U().workflowUtils.syntheticItemRoll(it, targets, {consumeUsage: true, consumeResources: true, spellSlot: false});
+    if (act) await U().workflowUtils.syntheticActivityRoll(act, targets, roll(targets, {consumeUsage: true, consumeResources: true, spellSlot: false}));
+    else await U().workflowUtils.syntheticItemRoll(it, targets, roll(targets, {consumeUsage: true, consumeResources: true, spellSlot: false}));
     return it;
 }
 
@@ -373,7 +376,7 @@ async function impalingShot({document: item, workflow}) {
     const act = item.system.activities.find(a => a.identifier === 'use') ?? item.system.activities.contents[0];
     if (!act || !canUse(item)) return;
     if (!await U().dialogUtils.confirm(item.name, 'Use ' + esc(item.name) + ' on ' + esc(t.document.name) + '?', {userId: firstOwner(workflow.actor)})) return;
-    await U().workflowUtils.syntheticActivityRoll(act, Array.from(workflow.hitTargets).map(toDoc), {consumeUsage: true, consumeResources: true, spellSlot: false});
+    await U().workflowUtils.syntheticActivityRoll(act, Array.from(workflow.hitTargets).map(toDoc), roll(workflow.hitTargets, {consumeUsage: true, consumeResources: true, spellSlot: false}));
 }
 async function brimstoneStep({workflow}) {
     const me = wfToken(workflow);
@@ -415,7 +418,7 @@ async function youDieOnMyCommand({document: item, workflow, ditem, targetToken})
     const ok = await U().dialogUtils.confirm(item.name, esc(targetToken.name) + ' would drop to 0 HP. Use ' + esc(item.name) + '?', {userId: firstOwner(owner)});
     if (!ok) return;
     const act = item.system.activities.contents[0];
-    if (act) await U().workflowUtils.syntheticActivityRoll(act, [targetToken], {consumeUsage: true, consumeResources: true, spellSlot: false});
+    if (act) await U().workflowUtils.syntheticActivityRoll(act, [targetToken], roll([targetToken], {consumeUsage: true, consumeResources: true, spellSlot: false}));
     U().workflowUtils.preventZeroHP(ditem);
 }
 // Telekinetic Seal: on a failed save, push 15 ft or knock Prone. CPR1 split it into a push and a prone
@@ -457,7 +460,7 @@ async function punishment({document: item, workflow}) {
     if (!act) return;
     const data = act.toObject();
     if (data.damage?.parts?.[0]) data.damage.parts[0].bonus = String(took.totalDamage);
-    await U().workflowUtils.syntheticActivityDataRoll(data, item, [toDoc(workflow.token)], {consumeUsage: true, consumeResources: true, spellSlot: false});
+    await U().workflowUtils.syntheticActivityDataRoll(data, item, [toDoc(workflow.token)], roll([workflow.token], {consumeUsage: true, consumeResources: true, spellSlot: false}));
 }
 
 // ======================================================== registration

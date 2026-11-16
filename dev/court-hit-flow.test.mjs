@@ -169,4 +169,43 @@ assert.match(calls.find(c => c[0] === 'burnRoll')[1], /^6d6/, 'picked 0 but Deat
     const d = E.sealDuration();
     assert.equal(d.rounds, 10, 'engine seals last 1 minute');
 }
+// ---- 1.7.4: Midi applies the Bonus Action "Place Seal" effect with origin = the effect ON his
+// Baleful Interdict item (Actor.X.Item.Y.ActiveEffect.Z). It must be a seal, owned by him, counted
+// by sealsOf, and renamed on create.
+{
+    const itemFx = {id: 'biFx', documentName: 'ActiveEffect', name: 'Baleful Interdict', parent: bi};
+    const fxUuid = bi.uuid + '.ActiveEffect.biFx';
+    registry.set(fxUuid, itemFx);
+    const victim = mkActor('Bangiras');
+    const sealFx = {id: 'eFx', documentName: 'ActiveEffect', name: 'Baleful Interdict', origin: fxUuid, flags: {}, transfer: false, duration: {seconds: 60}};
+    sealFx.update = async u => { for (const [k, v] of Object.entries(u)) setPath(sealFx, k, v); log('effectUpdate', u); };
+    victim.effects.push(sealFx, {...seal(syd), id: 'sealHit'});
+    assert.ok(E.isSeal(sealFx), 'effect-origin Baleful Interdict effect is a seal');
+    assert.equal(E.sealOwner(sealFx), syd, 'owner resolved through the item effect');
+    assert.equal(E.sealsOf(victim, syd).length, 2, 'both seals counted (was 1 of 2 at the table)');
+    assert.equal(E.sealsOn(victim).get(syd.uuid)?.effects.length, 2);
+    calls.length = 0;
+    await hooks.createActiveEffect(sealFx, {}, 'gm');
+    const u = calls.find(c => c[0] === 'effectUpdate')?.[1] ?? {};
+    assert.equal(u.name, 'Baleful Interdict: Sydmore', 'effect-origin seal renamed');
+    assert.equal(u.origin, bi.uuid, 'origin moved to his Baleful Interdict item');
+    assert.deepEqual(u['flags.nix-module.seal'], {owner: syd.uuid});
+}
+// ---- 1.7.4: an old seal (placed before 1.7.4, never normalised) is normalised when a hit is recorded.
+{
+    const victim = mkActor('Old Target');
+    const old = {id: 'eOld', documentName: 'ActiveEffect', name: 'Baleful Interdict', origin: syd.uuid, flags: {}, transfer: false, duration: {seconds: 60}};
+    old.update = async u => { for (const [k, v] of Object.entries(u)) setPath(old, k, v); log('effectUpdate', u); };
+    victim.effects.push(old);
+    calls.length = 0; dialogs.length = 0;
+    answer = () => null;
+    await onAttack({id: 'wfOld', actor: syd, item: fist, activity: {type: 'attack'}, hitTargets: new Set([victim.token.object]), d20AttackRoll: 9, isCritical: false, workflowOptions: {}});
+    assert.equal(old.name, 'Baleful Interdict: Sydmore', 'renamed on the hit');
+    assert.equal(old.origin, bi.uuid, 'origin = his Baleful Interdict item');
+    assert.equal(old.flags['nix-module']?.seal?.owner, syd.uuid, 'Nix Fix seal flag set');
+    assert.equal(old.flags['chris-premades']?.info?.identifier, 'balefulInterdictEffect');
+    assert.equal(E.sealsOf(victim, syd).length, 1, 'still counted after normalising');
+    const n = await E.normalizeSeals(victim);
+    assert.equal(n, 0, 'normalising twice changes nothing');
+}
 console.log('court hit flow: all passed');

@@ -95,14 +95,15 @@ function catAdapter() {
         const r = noSpend(o);
         // CPR1 used `killAnim`; CAT has no switch for it (the item data's own autoanimations flag decides).
         delete r.killAnim;
+        delete r.confirmTargets;
         return r;
     };
     const workflowUtils = {
-        syntheticItemRoll: (item, targets, o) => u.workflowUtils.syntheticItemRoll(item, docs(targets), opt(o)),
-        syntheticItemDataRoll: (itemData, actor, targets, o) => u.workflowUtils.syntheticItemDataRoll(itemData, actor, docs(targets), opt(o)),
-        syntheticActivityRoll: (activity, targets, o) => u.workflowUtils.syntheticActivityRoll(activity, docs(targets), opt(o)),
+        syntheticItemRoll: (item, targets, o) => u.workflowUtils.syntheticItemRoll(item, docs(targets), opt(fixedTargets(targets, o))),
+        syntheticItemDataRoll: (itemData, actor, targets, o) => u.workflowUtils.syntheticItemDataRoll(itemData, actor, docs(targets), opt(fixedTargets(targets, o))),
+        syntheticActivityRoll: (activity, targets, o) => u.workflowUtils.syntheticActivityRoll(activity, docs(targets), opt(fixedTargets(targets, o))),
         // CPR1: (activityData, item, actor, targets, opts). CAT: (activityData, item, targets, opts).
-        syntheticActivityDataRoll: (activityData, item, actor, targets, o) => u.workflowUtils.syntheticActivityDataRoll(activityData, item, docs(targets), opt(o)),
+        syntheticActivityDataRoll: (activityData, item, actor, targets, o) => u.workflowUtils.syntheticActivityDataRoll(activityData, item, docs(targets), opt(fixedTargets(targets, o))),
         bonusDamage: (wf, formula, o) => u.workflowUtils.bonusDamage(wf, formula, o),
         bonusAttack: (wf, formula) => u.workflowUtils.bonusAttack(wf, formula),
         modifyDamageAppliedFlat: (ditem, n, o) => u.workflowUtils.modifyDamageAppliedFlat(ditem, n, o),
@@ -210,10 +211,46 @@ export function canUse(item) {
     });
 }
 
+// ---------------------------------------------------------------- fixed targets: no Target Confirmation
+// Nix's rule (1.7.4): a roll Nix Fix makes itself at targets it already chose never opens Midi's
+// Target Confirmation. Midi's per-roll switch, read in Midi's own source (v13 branch and v14.6.8,
+// src/module/activities/activityHelpers.ts, requiresTargetConfirmation):
+//     midiOptions.workflowOptions.targetConfirmation = 'none'   ('never' is accepted too)
+// Both engines put a helper's `options` into midiOptions (CPR1 lib/utilities/workflowUtils.js,
+// CAT utilities/workflowUtils.mjs), so it travels as {options: {workflowOptions: {targetConfirmation}}}.
+// A top-level options.targetConfirmation is NOT read by Midi. Every synthetic roll made through cpr()
+// with at least one target gets it; a caller that wants the dialog passes confirmTargets: true or its
+// own workflowOptions.targetConfirmation.
+export const NO_CONFIRM = 'none';
+export function fixedTargets(targets, o) {
+    const n = Array.isArray(targets) ? targets.length : (targets?.size ?? Array.from(targets ?? []).length);
+    if (!n || o?.confirmTargets) return o;
+    const out = {...(o ?? {})};
+    out.options = {...(out.options ?? {})};
+    out.options.workflowOptions = {targetConfirmation: NO_CONFIRM, ...(out.options.workflowOptions ?? {})};
+    return out;
+}
+// v13: Chris's Premades 1's own helpers, with the synthetic rolls routed through fixedTargets().
+const cpr1Adapters = new WeakMap();
+function cpr1Adapter(u) {
+    let a = cpr1Adapters.get(u);
+    if (a) return a;
+    const w = u.workflowUtils ?? {};
+    const workflowUtils = Object.assign(Object.create(w), {
+        syntheticItemRoll: (item, targets, o) => w.syntheticItemRoll(item, targets, fixedTargets(targets, o)),
+        syntheticItemDataRoll: (itemData, actor, targets, o) => w.syntheticItemDataRoll(itemData, actor, targets, fixedTargets(targets, o)),
+        syntheticActivityRoll: (activity, targets, o) => w.syntheticActivityRoll(activity, targets, fixedTargets(targets, o)),
+        syntheticActivityDataRoll: (activityData, item, actor, targets, o) => w.syntheticActivityDataRoll(activityData, item, actor, targets, fixedTargets(targets, o))
+    });
+    a = Object.assign(Object.create(u), {workflowUtils});
+    cpr1Adapters.set(u, a);
+    return a;
+}
+
 let adapter = null;
 export function cpr() {
     const v13 = globalThis.chrisPremades?.utils;
-    if (v13) return v13;
+    if (v13) return cpr1Adapter(v13);
     if (!globalThis.cat?.utils) return undefined;
     return (adapter ??= catAdapter());
 }

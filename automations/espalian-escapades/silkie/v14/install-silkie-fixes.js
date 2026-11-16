@@ -85,7 +85,7 @@ const agile = async () => {
         if (!pick) return;
         targets = [pick.object ?? pick];
     }
-    setTimeout(() => workflowUtils.syntheticActivityRoll(act, targets.slice(0, 1), {consumeResources: false, options: {workflowOptions: {nixAgile: true}}}), 400);
+    setTimeout(() => workflowUtils.syntheticActivityRoll(act, targets.slice(0, 1), {consumeResources: false, options: {workflowOptions: {targetConfirmation: 'none', nixAgile: true}}}), 400);
 };
 
 // Robe of Useful Items: roll / activityRollFinished / 50 on "Detach a Patch". Same file on Silent Silk.

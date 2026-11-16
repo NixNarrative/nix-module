@@ -5,6 +5,7 @@
 //  - Vengeful Blade: weapon attack, +1d8 necrotic on the hit (level 7), condition; its next attack or spell: 2d8, ends.
 //  - Hell's Lash: failed save tethers; start of its turn: GM asked, 2d4 fire; end of its turn: save ends it.
 //  - Hellish Frenzy: ends at the start of its owner's next turn.
+//  - 1.7.4: Enervating Spell covers the whole casting (every ray / beam); Spellbreaker with a string button value.
 import assert from 'node:assert/strict';
 const clone = o => o === undefined ? o : JSON.parse(JSON.stringify(o));
 const setPath = (o, p, v) => { const ks = p.split('.'); let x = o; for (const k of ks.slice(0, -1)) x = (x[k] ??= {}); x[ks.at(-1)] = v; };
@@ -264,8 +265,43 @@ assert.ok(victim.effects.includes(vul), 'kept after the workflow (damage may be 
 victim.system.attributes.hp.value = 30;
 for (const f of hooks.updateActor) f(victim, {system: {attributes: {hp: {}}}}, {dnd5e: {hp: {value: 50, temp: 0}}});
 await sleep(500);
-assert.ok(!victim.effects.includes(vul), 'removed once the damage landed');
+// 1.7.4 (cr-valintina-07): one casting covers every attack / damage roll of that spell. The first damage no
+// longer ends it (Scorching Ray: only the first ray was vulnerable).
+assert.ok(victim.effects.includes(vul), '1.7.4: still vulnerable after the first damage landed');
+assert.ok(val.effects.some(e => e.name === 'Enervating Spell (casting)'), 'her ignore-resistance stays for the casting');
+// The next ray of the same casting, at a second creature: it joins, no second seal, no re-arming needed.
+const victim2 = mkActor('Victim Two', {disp: 1});
+tokens.push(victim2.token.object);
+await all('midi-qol.premades.postPreambleComplete', {id: 'm2', actor: val, item: mote, token: val.token.object, activity: {type: 'attack'}, targets: new Set([victim2.token.object])});
+assert.ok(victim.effects.includes(vul), 'the same spell again does not end the casting');
+await onDamage({id: 'm2', actor: val, item: mote, activity: {type: 'attack', damage: {parts: [{types: ['fire']}]}}, castData: {castLevel: 3},
+    targets: new Set([victim2.token.object]), hitTargets: new Set([victim2.token.object]), damageRolls: [{options: {type: 'fire'}}]});
+const vul2 = victim2.effects.find(e => e.name === 'Enervating Spell');
+assert.ok(vul2 && vul2.changes.some(c => c.value === 'fire'), 'second ray: its target is vulnerable too');
+assert.equal(vbi.system.uses.spent, 1, 'still one seal for the whole casting');
+// A third ray back at the first creature: nothing new, nothing lost.
+await onDamage({id: 'm3', actor: val, item: mote, activity: {type: 'attack', damage: {parts: [{types: ['fire']}]}}, castData: {castLevel: 3},
+    targets: new Set([victim.token.object]), hitTargets: new Set([victim.token.object]), damageRolls: [{options: {type: 'fire'}}]});
+assert.equal(victim.effects.filter(e => e.name === 'Enervating Spell').length, 1, 'one vulnerability per creature');
+assert.equal(vbi.system.uses.spent, 1);
+// She uses something else: the casting is over, everything it made goes.
+await all('midi-qol.premades.postPreambleComplete', {id: 'o1', actor: val, item: cantrip, token: val.token.object, activity: {type: 'save'}, targets: new Set([victim.token.object])});
+assert.ok(!victim.effects.includes(vul) && !victim2.effects.includes(vul2), 'another item ends the casting: vulnerabilities removed');
 assert.ok(!val.effects.some(e => e.name === 'Enervating Spell (casting)'), 'her ignore-resistance goes too');
+// Not armed any more: the same spell cast again does nothing without a new click.
+await onDamage({id: 'm4', actor: val, item: mote, activity: {type: 'save', damage: {parts: [{types: ['fire']}]}}, castData: {castLevel: 3},
+    targets: new Set([victim.token.object]), damageRolls: [{options: {type: 'fire'}}]});
+assert.ok(!victim.effects.some(e => e.name === 'Enervating Spell'), 'a new casting needs Enervating Spell armed again');
+assert.equal(vbi.system.uses.spent, 1);
+// Armed again; this time the turn changes mid-casting: it never outlives the turn.
+mkEffect(val, {name: 'Enervating Spell (ready)', flags: {'nix-module': {enervating: true}}});
+await onDamage({id: 'm5', actor: val, item: mote, activity: {type: 'save', damage: {parts: [{types: ['fire']}]}}, castData: {castLevel: 3},
+    targets: new Set([victim.token.object]), damageRolls: [{options: {type: 'fire'}}]});
+assert.ok(victim.effects.some(e => e.name === 'Enervating Spell'), 'second casting');
+assert.equal(vbi.system.uses.spent, 2, 'a new casting, a new seal');
+await all('updateCombat', {id: 'c2', started: true, round: 1, turn: 1, combatants: {get: () => null}, previous: {}}, {turn: 1});
+assert.ok(!victim.effects.some(e => e.name === 'Enervating Spell'), 'turn change ends the casting');
+assert.ok(!val.effects.some(e => e.name === 'Enervating Spell (casting)'));
 // Submit: a save spell at a creature with 2 of her seals is offered (owner matched through sameActor).
 const sealOf = owner => ({name: 'Baleful Interdict: ' + owner.name, flags: {'nix-module': {seal: {owner: owner.uuid}}, 'chris-premades': {info: {identifier: 'balefulInterdictEffect'}}}, transfer: false});
 mkEffect(victim, sealOf(val)); mkEffect(victim, sealOf(val));
@@ -273,5 +309,37 @@ dialogs.length = 0;
 answer = cfg => /Submit/.test(cfg.window.title) ? null : null;
 await all('midi-qol.premades.postPreambleComplete', {id: 's1', actor: val, item: mote, token: val.token.object, activity: {type: 'save'}, targets: new Set([victim.token.object])});
 assert.ok(dialogs.some(d => /Submit/.test(d.window.title)), 'Submit offered');
+
+
+// ======================================================= Valintina: Spellbreaker (1.7.4: Spell Duel was +21)
+// Chris's Premades' button dialog hands the value back as a string. "2" seals must mean Counterspell at
+// level 4 and a Spell Duel of d20 + Cha 4 + 4, not 2 + "2" = "22".
+val.flags['nix-module'].court.spellbreaker = true;
+const rolled = [];
+globalThis.Roll = class { constructor(f) { this.formula = f; rolled.push(f); }
+    async evaluate() { this.total = rolled.length % 2 ? 25 : 10; this.dice = [{total: 12}]; return this; }
+    async toMessage(d) { log('rollMessage', d.flavor); } };
+const fireball = mkItem(victim, {name: 'Fireball', type: 'spell', system: {level: 3, activities: {contents: []}}});
+assert.equal(victim.effects.filter(e => e.flags?.['nix-module']?.seal).length, 2);
+calls.length = 0;
+askAnswer = (title, buttons) => /Spellbreaker/.test(title) ? String(buttons[1][1]) : null;      // "Burn 2 seals", as a string
+const wfS = {id: 'sb1', actor: victim, item: fireball, token: victim.token.object, activity: {type: 'save'}, castData: {castLevel: 3}, targets: new Set([val.token.object])};
+await all('midi-qol.premades.postPreambleComplete', wfS);
+assert.equal(rolled[0], '1d20 + 4 + 4', 'Spell Duel: d20 + Cha 4 + counter level 4 (2 seals), was "1d20 + 4 + 22"');
+assert.ok(calls.some(c => c[0] === 'rollMessage' && /level 4$/.test(c[1])), 'the chat card says level 4');
+assert.equal(victim.effects.filter(e => e.flags?.['nix-module']?.seal).length, 0, 'exactly the 2 seals burned');
+assert.equal(wfS.aborted, true, 'countered');
+// A value past what the creature carries is capped; a "No" does nothing.
+mkEffect(victim, sealOf(val));
+rolled.length = 0;
+askAnswer = title => /Spellbreaker/.test(title) ? '9' : null;
+await all('midi-qol.premades.postPreambleComplete', {...wfS, id: 'sb2', aborted: false, nixCourtPreamble: false, nixSpellbreaker: false});
+assert.equal(rolled[0], '1d20 + 4 + 3', 'capped at the 1 seal it carries: level 3');
+mkEffect(victim, sealOf(val));
+rolled.length = 0;
+askAnswer = () => false;
+await all('midi-qol.premades.postPreambleComplete', {...wfS, id: 'sb3', aborted: false, nixCourtPreamble: false, nixSpellbreaker: false});
+assert.equal(rolled.length, 0, 'No: no duel');
+assert.equal(victim.effects.filter(e => e.flags?.['nix-module']?.seal).length, 1);
 
 console.log('court spells: all passed');

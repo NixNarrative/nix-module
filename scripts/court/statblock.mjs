@@ -151,7 +151,7 @@ export async function npcLegendary(actor) {
             name, type: 'feat', img: item.img, sort: (la?.sort ?? 0) + 50,
             'system.type': {value: 'monster', subtype: ''},
             ...(desc || !existing ? {'system.description.value': (desc || '') + '<p><i>Opens ' + esc(item.name) + ': ' + esc(a.name) + '.</i></p>'} : {}),
-            'system.activities': {nixLegendProxy0: {_id: 'nixLegendProxy0', type: 'utility', name, activation: {type: 'legendary', value: cost, override: false, condition: ''},
+            'system.activities': {nixLegendProxy00: {_id: 'nixLegendProxy00', type: 'utility', name, activation: {type: 'legendary', value: cost, override: false, condition: ''},
                 range: {units: 'self'}, consumption: {targets: []}, flags: {[MODULE_ID]: {legendaryProxy: {item: item.id, activity: a.id}}}}},
             ['flags.' + MODULE_ID + '.legendaryAction']: key
         });

@@ -114,7 +114,7 @@ const duelist = async () => {
     if (!yes) return;
     if (inCombat) await feat.setFlag('world', 'nixDuelistTurn', stamp);
     const activity = workflow.activity;
-    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target], {options: {workflowOptions: {nixDuelist: true}}}), 500);
+    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target], {options: {workflowOptions: {targetConfirmation: 'none', nixDuelist: true}}}), 500);
 };
  
 // ---- Install ----------------------------------------------------------------------------

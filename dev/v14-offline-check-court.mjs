@@ -72,6 +72,8 @@ function makeEffect(data, parent) {
     return e;
 }
 function makeActivity(id, data, item) {
+    // Foundry refuses an id that isn't 16 letters/digits (1.7.1's nixVengefulBld0 got through this mock).
+    if (!/^[A-Za-z0-9]{16}$/.test(String(id)) || (data?._id && !/^[A-Za-z0-9]{16}$/.test(String(data._id)))) throw new Error('activity [' + (data?._id ?? id) + '] validation errors: _id: must be a valid 16-character alphanumeric ID');
     const a = clone(data);
     a.id = a._id = id;
     a.flags ??= {};
@@ -134,6 +136,11 @@ function makeActor(data) {
     const rawItems = a.items, rawEffects = a.effects;
     a.items = items; a.effects = effects;
     for (const d of rawItems ?? []) { const it = makeItem(d, a); items.set(it.id, it); }
+    // Invalid (hidden) items, as Foundry keeps them: export key _invalidItems (test fixtures only).
+    const invalid = new Map((a._invalidItems ?? []).map(d => [d._id, {_id: d._id, name: d.name, _source: clone(d)}]));
+    delete a._invalidItems;
+    Object.defineProperty(items, 'invalidDocumentIds', {get: () => new Set(invalid.keys())});
+    items.getInvalid = id => invalid.get(id);
     for (const d of rawEffects ?? []) { const ef = makeEffect(d, a); effects.set(ef.id, ef); }
     Object.defineProperty(a, 'appliedEffects', {get: () => effects.filter(e => !e.disabled)});
     a.statuses = new Set();
@@ -147,7 +154,7 @@ function makeActor(data) {
         if (type === 'Item') return list.map(d => { const it = makeItem(d, a); items.set(it.id, it); return it; });
         return list.map(d => { const ef = makeEffect(d, a); effects.set(ef.id, ef); return ef; });
     };
-    a.deleteEmbeddedDocuments = async (type, ids) => ids.forEach(id => (type === 'Item' ? items : effects).delete(id));
+    a.deleteEmbeddedDocuments = async (type, ids) => ids.forEach(id => { if (type === 'Item' && invalid.has(id)) invalid.delete(id); else (type === 'Item' ? items : effects).delete(id); });
     a.getRollData = () => ({});
     return a;
 }

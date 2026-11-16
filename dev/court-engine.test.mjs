@@ -32,7 +32,25 @@ assert.ok(u.isCatAdapter);
 await u.workflowUtils.syntheticItemRoll({name: 'it'}, [placeable], {consumeUsage: true});
 const [, [, targets, opts]] = calls.find(c => c[0] === 'syntheticItemRoll');
 assert.equal(targets[0], tokDoc, 'placeable -> TokenDocument');
-assert.deepEqual(opts, {consumeUsage: true, consumeResources: false, spellSlot: false});
+assert.deepEqual(opts, {consumeUsage: true, consumeResources: false, spellSlot: false, options: {workflowOptions: {targetConfirmation: 'none'}}},
+  '1.7.4: a roll at targets Nix Fix chose carries Midi\'s no-Target-Confirmation option');
+// fixedTargets (1.7.4)
+assert.equal(E.NO_CONFIRM, 'none');
+assert.equal(E.fixedTargets([], {a: 1}).options, undefined, 'no targets: untouched');
+assert.equal(E.fixedTargets(undefined, undefined), undefined, 'nothing in, nothing out');
+assert.deepEqual(E.fixedTargets([1], undefined), {options: {workflowOptions: {targetConfirmation: 'none'}}}, 'no options given');
+assert.deepEqual(E.fixedTargets(new Set([1]), {options: {workflowOptions: {nixHew: true}, x: 1}}),
+  {options: {workflowOptions: {targetConfirmation: 'none', nixHew: true}, x: 1}}, 'a Set of targets; the caller\'s other options kept');
+assert.equal(E.fixedTargets([1], {options: {workflowOptions: {targetConfirmation: 'always'}}}).options.workflowOptions.targetConfirmation, 'always', 'the caller\'s own choice wins');
+assert.equal(E.fixedTargets([1], {confirmTargets: true}).options, undefined, 'confirmTargets: true keeps the dialog');
+{ const given = {options: {workflowOptions: {k: 1}}}; E.fixedTargets([1], given); assert.deepEqual(given, {options: {workflowOptions: {k: 1}}}, 'the caller\'s object is not changed'); }
+calls.length = 0;
+await u.workflowUtils.syntheticItemRoll({name: 'it'}, [], {consumeUsage: true});
+assert.equal(calls[0][1][2].options, undefined, 'CAT: no targets, no option');
+calls.length = 0;
+await u.workflowUtils.syntheticItemRoll({name: 'it'}, [placeable], {confirmTargets: true});
+assert.equal(calls[0][1][2].options, undefined); assert.equal('confirmTargets' in calls[0][1][2], false, 'confirmTargets is ours, not passed to CAT');
+calls.length = 0;
 await u.workflowUtils.syntheticActivityDataRoll({_id: 'a'}, {name: 'item'}, {name: 'actor'}, [placeable], {});
 const sadr = calls.find(c => c[0] === 'syntheticActivityDataRoll')[1];
 assert.equal(sadr.length, 4, 'actor argument dropped'); assert.equal(sadr[2][0], tokDoc);
@@ -61,7 +79,28 @@ assert.equal(E.canUse(item), true);
 assert.equal(E.ident({flags: {'nix-module': {identifier: 'x'}}}), 'x');
 assert.equal(E.ident({flags: {cat: {identifier: 'y'}}}), 'y');
 // v13: chrisPremades present -> identity
-globalThis.chrisPremades = {utils: {v13: true}};
+const v13calls = [];
+const v13rec = name => (...a) => { v13calls.push([name, a]); return {ok: name}; };
+globalThis.chrisPremades = {utils: {v13: true, genericUtils: {marker: 1},
+  workflowUtils: {syntheticItemRoll: v13rec('syntheticItemRoll'), syntheticItemDataRoll: v13rec('syntheticItemDataRoll'), syntheticActivityRoll: v13rec('syntheticActivityRoll'),
+    syntheticActivityDataRoll: v13rec('syntheticActivityDataRoll'), bonusDamage: v13rec('bonusDamage')}}};
 assert.equal(E.cpr().v13, true);
+// 1.7.4: on v13 the synthetic rolls go through fixedTargets too; everything else is Chris's Premades' own.
+const u13 = E.cpr();
+assert.equal(u13, E.cpr(), 'one adapter per utils object');
+assert.equal(u13.genericUtils.marker, 1); assert.equal(u13.isCatAdapter, undefined);
+const NC = {options: {workflowOptions: {targetConfirmation: 'none'}}};
+await u13.workflowUtils.syntheticItemRoll('it', ['t'], {consumeUsage: false});
+assert.deepEqual(v13calls.at(-1), ['syntheticItemRoll', ['it', ['t'], {consumeUsage: false, ...NC}]]);
+await u13.workflowUtils.syntheticItemDataRoll('data', 'actor', ['t']);
+assert.deepEqual(v13calls.at(-1), ['syntheticItemDataRoll', ['data', 'actor', ['t'], NC]]);
+await u13.workflowUtils.syntheticActivityRoll('act', ['t'], {options: {workflowOptions: {nixArc: true}}});
+assert.deepEqual(v13calls.at(-1)[1][2], {options: {workflowOptions: {targetConfirmation: 'none', nixArc: true}}});
+await u13.workflowUtils.syntheticActivityDataRoll('ad', 'item', 'actor', ['t'], {consumeUsage: true});
+assert.deepEqual(v13calls.at(-1), ['syntheticActivityDataRoll', ['ad', 'item', 'actor', ['t'], {consumeUsage: true, ...NC}]], 'v13 keeps the actor argument');
+await u13.workflowUtils.syntheticActivityRoll('act', [], {consumeUsage: false});
+assert.deepEqual(v13calls.at(-1)[1][2], {consumeUsage: false}, 'no targets (a self / template roll): untouched');
+u13.workflowUtils.bonusDamage('wf', '1d8');
+assert.deepEqual(v13calls.at(-1), ['bonusDamage', ['wf', '1d8']], 'other helpers pass straight through');
 assert.equal(E.fx(v13data), v13data, 'fx identity on v13');
 console.log('engine tests: all passed');

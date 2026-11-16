@@ -117,7 +117,7 @@ assert.deepEqual(conduit._src.system.activities.harm0000000000000.consumption.ta
 assert.deepEqual(tk._src.system.activities.push000000000000.consumption.targets, [{type: 'attribute', target: 'resources.legact.value', value: '1'}]);
 const proxy = actionItem('proxy:' + conduit.id + '.nixDevourLegend0');
 assert.ok(proxy, 'Devour button'); assert.equal(proxy.name, 'Devour');
-assert.deepEqual(proxy._src.system.activities.nixLegendProxy0.flags[MOD].legendaryProxy, {item: conduit.id, activity: 'nixDevourLegend0'});
+assert.deepEqual(proxy._src.system.activities.nixLegendProxy00.flags[MOD].legendaryProxy, {item: conduit.id, activity: 'nixDevourLegend0'});
 assert.match(proxy._src.system.description.value, /His bite/);
 
 // ---- Re-apply: the kit puts its version back (activities, uses, itemUses on Telekinetic Seal), then the layout again.
@@ -146,7 +146,7 @@ let preUse;
 globalThis.Hooks = {on: (n, f) => { if (n === 'dnd5e.preUseActivity') preUse = f; }};
 const {registerStatBlock} = await import('../scripts/court/statblock.mjs');
 registerStatBlock();
-const pAct = proxy.system.activities.get('nixLegendProxy0');
+const pAct = proxy.system.activities.get('nixLegendProxy00');
 pAct.actor = npc;
 assert.equal(preUse(pAct), false);
 await new Promise(r => setTimeout(r, 5));

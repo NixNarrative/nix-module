@@ -13,7 +13,7 @@
 // =====================================================================
 const MOD = 'nix-module';
 const KEY = 'valintina';
-const SENTINEL = "return await (async () => {\n    const feat = document;\n    const me = feat.parent;\n    const mine = actorUtils.getFirstToken(me);\n    const foe = workflow.token;\n    if (!mine || !foe || !workflow.actor || workflow.actor.uuid === me.uuid) return;\n    if (!workflow.activity?.hasAttack && !workflowUtils.isAttackType(workflow, 'attack')) return;\n    if (foe.document.disposition === mine.disposition) return;\n    const others = Array.from(workflow.hitTargets ?? []).filter(t => t.id !== mine.id);\n    if (!others.length) return;\n    if (tokenUtils.getDistance(mine, foe.document) > 5) return;\n    const inCombat = !!game.combat?.started;\n    if (inCombat && actorUtils.hasUsedReaction(me)) return;\n    if (['incapacitated', 'unconscious', 'stunned', 'paralyzed', 'petrified'].some(s => me.statuses?.has(s))) return;\n    let weapons = me.items.filter(i => i.type === 'weapon' && i.system.equipped && i.system.activities?.some(a => a.type === 'attack')\n        && ['simpleM', 'martialM'].includes(i.system.type?.value));\n    if (!weapons.length) weapons = me.items.filter(i => i.type === 'weapon' && i.system.equipped && i.system.activities?.some(a => a.type === 'attack'));\n    if (!weapons.length) return;\n    const userId = queryUtils.firstOwner(me, true) ?? game.user.id;\n    const text = foe.document.name + ' hit ' + others.map(t => t.document.name).join(', ') + ' right next to you. Use your reaction to make an Opportunity Attack against it?';\n    let weapon;\n    if (weapons.length === 1) {\n        if (!await dialogUtils.confirm(feat.name + ': Guardian', text, {userId})) return;\n        weapon = weapons[0];\n    } else {\n        weapon = await dialogUtils.selectDocumentDialog(feat.name + ': Guardian', text + ' Choose a weapon (or Cancel).', weapons, {userId});\n        if (!weapon) return;\n    }\n    const activity = weapon.system.activities.find(a => a.type === 'attack');\n    if (inCombat) await actorUtils.setReactionUsed(me);\n    setTimeout(async () => {\n        const wf = await workflowUtils.syntheticActivityRoll(activity, [foe], {options: {workflowOptions: {nixSentinel: true}}});\n        const hit = wf?.hitTargets?.size ? wf.hitTargets.first() : null;\n        if (hit?.actor) await effectUtils.createEffects(hit.actor, [{\n            name: 'Sentinel: Halted', img: feat.img, origin: feat.uuid,\n            duration: {value: 1, units: 'rounds', expiry: 'turnEnd'},\n            description: 'Speed 0 for the rest of the current turn.',\n            system: {changes: ['walk', 'fly', 'swim', 'climb', 'burrow'].map(k => ({key: 'system.attributes.movement.' + k, type: 'override', value: '0', priority: 60}))}\n        }]);\n    }, 300);\n})();";
+const SENTINEL = "return await (async () => {\n    const feat = document;\n    const me = feat.parent;\n    const mine = actorUtils.getFirstToken(me);\n    const foe = workflow.token;\n    if (!mine || !foe || !workflow.actor || workflow.actor.uuid === me.uuid) return;\n    if (!workflow.activity?.hasAttack && !workflowUtils.isAttackType(workflow, 'attack')) return;\n    if (foe.document.disposition === mine.disposition) return;\n    const others = Array.from(workflow.hitTargets ?? []).filter(t => t.id !== mine.id);\n    if (!others.length) return;\n    if (tokenUtils.getDistance(mine, foe.document) > 5) return;\n    const inCombat = !!game.combat?.started;\n    if (inCombat && actorUtils.hasUsedReaction(me)) return;\n    if (['incapacitated', 'unconscious', 'stunned', 'paralyzed', 'petrified'].some(s => me.statuses?.has(s))) return;\n    let weapons = me.items.filter(i => i.type === 'weapon' && i.system.equipped && i.system.activities?.some(a => a.type === 'attack')\n        && ['simpleM', 'martialM'].includes(i.system.type?.value));\n    if (!weapons.length) weapons = me.items.filter(i => i.type === 'weapon' && i.system.equipped && i.system.activities?.some(a => a.type === 'attack'));\n    if (!weapons.length) return;\n    const userId = queryUtils.firstOwner(me, true) ?? game.user.id;\n    const text = foe.document.name + ' hit ' + others.map(t => t.document.name).join(', ') + ' right next to you. Use your reaction to make an Opportunity Attack against it?';\n    let weapon;\n    if (weapons.length === 1) {\n        if (!await dialogUtils.confirm(feat.name + ': Guardian', text, {userId})) return;\n        weapon = weapons[0];\n    } else {\n        weapon = await dialogUtils.selectDocumentDialog(feat.name + ': Guardian', text + ' Choose a weapon (or Cancel).', weapons, {userId});\n        if (!weapon) return;\n    }\n    const activity = weapon.system.activities.find(a => a.type === 'attack');\n    if (inCombat) await actorUtils.setReactionUsed(me);\n    setTimeout(async () => {\n        const wf = await workflowUtils.syntheticActivityRoll(activity, [foe], {options: {workflowOptions: {targetConfirmation: 'none', nixSentinel: true}}});\n        const hit = wf?.hitTargets?.size ? wf.hitTargets.first() : null;\n        if (hit?.actor) await effectUtils.createEffects(hit.actor, [{\n            name: 'Sentinel: Halted', img: feat.img, origin: feat.uuid,\n            duration: {value: 1, units: 'rounds', expiry: 'turnEnd'},\n            description: 'Speed 0 for the rest of the current turn.',\n            system: {changes: ['walk', 'fly', 'swim', 'climb', 'burrow'].map(k => ({key: 'system.attributes.movement.' + k, type: 'override', value: '0', priority: 60}))}\n        }]);\n    }, 300);\n})();";
 if (!globalThis.cat?.utils) return ui.notifications.error('Valintina fixes (v14): CAT is not active.');
 if (!game.modules.get(MOD)?.api?.court) return ui.notifications.warn('Valintina fixes (v14): needs Nix Fix 1.7.0 or later (reload the world after updating).');
 
@@ -114,11 +114,11 @@ async function fixOne(actor) {
         const acts = it => it.system.activities?.contents ?? Array.from(it.system.activities ?? []);
         const vb = actor.items.find(i => i.type === 'spell' && /^vengeful blade/i.test(i.name));
         if (vb) {
-            const keep = acts(vb).find(a => a.flags?.[MOD]?.court === 'vengefulBlade');
+            const keep = acts(vb).find(a => a.flags?.[MOD]?.court === 'vengefulBlade' && /^[A-Za-z0-9]{16}$/.test(a.id));
             const drop = {};
             for (const a of acts(vb)) if (a !== keep) drop['system.activities.-=' + a.id] = null;
             if (Object.keys(drop).length) await vb.update(drop);
-            if (!keep) await vb.update({'system.activities.nixVengefulBld0': {_id: 'nixVengefulBld0', type: 'utility', name: 'Vengeful Blade',
+            if (!keep) await vb.update({'system.activities.nixVengefulBlad0': {_id: 'nixVengefulBlad0', type: 'utility', name: 'Vengeful Blade',
                 activation: {type: 'action', value: 1, override: true}, range: {units: 'ft', value: '5', override: true},
                 target: {affects: {type: 'creature', count: '1'}, override: true}, consumption: {spellSlot: false, targets: []}, effects: [],
                 flags: {[MOD]: {court: 'vengefulBlade'}}}});
@@ -135,6 +135,42 @@ async function fixOne(actor) {
                 report.push('Hell\'s Lash: cast it as usual (Con save, 4d4 fire). A failed save tethers the target (red tether). Start of its turn: a popup to deal the 2d4 fire; end of its turn: its save to end it (burn a seal for disadvantage, offered if it carries the caster\'s seals). The Turn Start / Turn End buttons are gone.');
             } else report.push('<b>Hell\'s Lash: no save activity found.</b>');
         }
+    }
+
+    // ---- 1.7.2: repair what 1.7.1 broke. Its Vengeful Blade button had a 15-character id
+    //      (nixVengefulBld0); Foundry needs 16, and the spell could end up hidden as an invalid
+    //      item (not on the sheet, not copied by Make stat block). Rebuilt here without the bad
+    //      activities; illriggerSpells() then gives it the proper button.
+    async function repairBadIds() {
+        const ID16 = /^[A-Za-z0-9]{16}$/;
+        const coll = actor.items;
+        const fixed = [];
+        for (const id of Array.from(coll.invalidDocumentIds ?? [])) {
+            let bad = null;
+            try { bad = coll.getInvalid(id, {strict: false}); } catch (err) { bad = null; }
+            const src = bad?._source ? foundry.utils.deepClone(bad._source) : null;
+            const acts = src?.system?.activities;
+            const badKeys = Object.keys(acts ?? {}).filter(k => !ID16.test(k) || (acts[k]?._id && !ID16.test(acts[k]._id)));
+            if (!badKeys.length) continue;
+            for (const k of badKeys) delete acts[k];
+            try {
+                await actor.deleteEmbeddedDocuments('Item', [id]);
+                await actor.createEmbeddedDocuments('Item', [src], {keepId: true});
+                fixed.push(src.name);
+            } catch (err) {
+                console.error('Nix Fix | could not repair the hidden item ' + (src.name ?? id) + ' on ' + actor.name, err);
+                report.push('<b>' + (src.name ?? 'An item') + ' is hidden (invalid) and could not be repaired: ' + err.message + '</b> Delete it from the console and add the spell again.');
+            }
+        }
+        for (const item of coll) {
+            const keys = Object.keys(item._source?.system?.activities ?? {}).filter(k => !ID16.test(k));
+            if (!keys.length) continue;
+            const upd = {};
+            for (const k of keys) upd['system.activities.-=' + k] = null;
+            await item.update(upd);
+            fixed.push(item.name);
+        }
+        if (fixed.length) report.push('Repaired (1.7.1 left a bad button id): ' + fixed.join(', ') + '.');
     }
 
 
@@ -208,6 +244,31 @@ async function fixOne(actor) {
                 made.push('Interdict Boons: Slippery Ploy (new: reaction)');
             }
         }
+        // ---- 1.7.4 (cr-lucian-08/09): an option that is already its own item but has NO activity has no
+        // button (Lucian's "Invoke Hell: Honey-Sweet Blades" and "Invoke Hell: Turncoat" on v13: D&D Beyond
+        // made them as text-only items, so there was nothing to split and nothing to click). Every Invoke
+        // Hell option gets one (Turncoat: a save), and so do the subclass boons that are actions; the
+        // passive ones stay without. Anything else without a button is listed in the report.
+        const NEED = [[/^invoke hell:\s*turncoat$/i, 'save', 'action'], [/^invoke hell:\s*\S/i, 'utility', 'action'],
+            [/^interdict boons:\s*red cant$/i, 'utility', 'special'], [/^interdict boons:\s*(spellbreaker|slippery ploy)$/i, 'utility', 'reaction'],
+            [/^interdict boons:\s*veil of lies$/i, 'utility', 'bonus'], [/^interdict boons:\s*foul interchange$/i, 'utility', 'action']];
+        const added = [], bare = [];
+        for (const it of actor.items.filter(i => i.type === 'feat' && /^(invoke hell|interdict boons):\s*\S/i.test(i.name) && !acts(i).length)) {
+            const opt = it.name.replace(/^[^:]+:\s*/, '').trim();
+            if (PASSIVE.test(opt)) continue;
+            const row = NEED.find(([re]) => re.test(it.name));
+            if (!row) { if (it.flags?.[MOD]?.split) bare.push(it.name); continue; }
+            const id = foundry.utils.randomID(16);
+            const data = {_id: id, type: row[1], name: opt, activation: {type: row[2], value: 1}, consumption: {targets: [], spellSlot: false},
+                range: {units: 'self'}, target: {affects: {type: 'self'}}, uses: {max: '', spent: 0, recovery: []}};
+            if (row[1] === 'save') Object.assign(data, {range: {value: '60', units: 'ft'}, target: {affects: {type: 'enemy', count: '5', choice: true}},
+                save: {ability: ['cha'], dc: {calculation: 'cha', formula: ''}}, damage: {onSave: 'none', parts: []}});
+            await it.update({['system.activities.' + id]: data});
+            added.push(it.name);
+        }
+        if (added.length) report.push('<b>New button</b> (the item had no activity): ' + added.join(', ') + '.');
+        if (bare.length) report.push('No activity (left as text): ' + bare.join(', ') + '.');
+
         // Invoke Hell use: one, back on a short or long rest, shared by the options (characters and captains).
         // A boss (boss kit applied) keeps its options 1/day each.
         const opts = actor.items.filter(i => /^invoke hell:\s*\S/i.test(i.name) && acts(i).length);
@@ -342,6 +403,7 @@ async function fixOne(actor) {
         report.push('Mage Slayer: a concentrating creature ' + actor.name + ' damages makes its concentration save with disadvantage; Guarded Mind (1/short rest): when ' + actor.name + ' fails an Int, Wis or Cha save you\'re asked whether to succeed instead. Built in, so set Gambit\'s / Chris\'s Premades\' Mage Slayer to none on her (one prompt).');
     }
 
+    await repairBadIds();
     await splitBundles();
 
     // ---- Character section -----------------------------------------------------------------

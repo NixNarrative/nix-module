@@ -25,7 +25,7 @@ if (!targets.length) {
     if (!pick) return;
     targets = [pick.object ?? pick];
 }
-await workflowUtils.syntheticActivityRoll(act, targets.slice(0, 1), {consumeResources: false});
+await workflowUtils.syntheticActivityRoll(act, targets.slice(0, 1), {consumeResources: false, options: {workflowOptions: {targetConfirmation: 'none'}}});
 })();`,
  ROBE: String.raw`await (async () => {
 // Robe of Useful Items: 2 each of six fixed patches + 4d4 random ones (rolled the first time).

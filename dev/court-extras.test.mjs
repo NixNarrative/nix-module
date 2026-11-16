@@ -1,10 +1,11 @@
 // node dev/court-extras.test.mjs : 1.7.1 second batch (2026-11-12 table test).
 //  - Guarded Mind: fails Int/Wis/Cha only, asks, spends the use, returns the difference; no use left = nothing.
 //  - Infernal Conduit (v13): range 5 ft / 30 with Unfettered; Harm heals him, Heal costs him.
-//  - Vengeful Shot (v13): ranged weapon picked without a prompt; asked when two fit.
+//  - Vengeful Shot (v13): ranged weapon picked without a prompt; asked when two fit. 1.7.4: the weapon's attack
+//    activity is rolled itself (no "choose an activity" window), at the target, with no Target Confirmation.
 //  - Honey-Sweet Blades: advantage effect at the preamble on a sealed target; the hit becomes a crit.
 //  - Hellsight: vision mode to truesight and back; Darkness's Blinded removed.
-//  - Terrorizing Force (v13): its die joins the weapon's damage roll config (one manual roll).
+//  - Terrorizing Force (v13): its die goes into the weapon's own damage formula (one Roll Resolution window).
 //  - Mage Slayer: a concentrating target gets the disadvantage effect.
 import assert from 'node:assert/strict';
 const clone = o => o === undefined ? o : JSON.parse(JSON.stringify(o));
@@ -58,11 +59,16 @@ function mkItem(actor, data) {
     return it;
 }
 let distance = 5, confirmAnswer = true, buttonAnswer = null;
-const specialUses = [], applied = [];
+const specialUses = [], applied = [], shots = [], enchants = [];
 globalThis.chrisPremades = {utils: {
     tokenUtils: {getDistance: () => distance, findNearby: () => []},
     dialogUtils: {confirm: async (t, c) => { log('confirm', t); return confirmAnswer; }, buttonDialog: async (t, c, b) => { log('button', t, b.map(x => x[0])); return buttonAnswer ?? b[0][1]; }},
-    workflowUtils: {specialItemUse: async (w, t) => specialUses.push(w.name), applyDamage: async (t, n, type) => applied.push([n, type]),
+    itemUtils: {enchantItem: async (w, data) => { const e = {name: data.name, changes: data.changes, on: w.name, removed: false}; enchants.push(e); return e; }},
+    genericUtils: {remove: async e => { e.removed = true; }},
+    workflowUtils: {specialItemUse: async (w, t) => specialUses.push(w.name),
+        syntheticActivityRoll: async (act, targets, o) => { shots.push({kind: 'activity', weapon: act.item?.name, type: act.type, targets, o, special: enchants.some(e => e.on === act.item?.name && !e.removed)}); },
+        syntheticItemRoll: async (w, targets, o) => { shots.push({kind: 'item', weapon: w.name, targets, o}); },
+        applyDamage: async (t, n, type) => applied.push([n, type]),
         getDamageTypes: rolls => new Set(rolls.map(r => r.options.type)), getTotalDamageOfType: () => 12},
     rollUtils: {makeCritical: r => ({...r, crit: true})},
     actorUtils: {}, effectUtils: {}}};
@@ -106,15 +112,29 @@ const run = async (name, ...args) => { let r; for (const f of hooks[name] ?? [])
     const d = mkActor('Dayus'), t = mkActor('Orc', {disp: 1});
     mkItem(d, {name: 'Rapier', type: 'weapon', system: {equipped: true, type: {value: 'martialM'}, range: {value: 5}, properties: new Set(), activities: [{type: 'attack'}]}});
     mkItem(d, {name: 'Longbow', type: 'weapon', system: {equipped: true, type: {value: 'martialR'}, range: {value: 150, long: 600}, properties: new Set(), activities: [{type: 'attack'}]}});
+    // The longbow has a second activity first (a utility), like a D&D Beyond weapon with extra buttons.
+    d.items.find(i => i.name === 'Longbow').system.activities.unshift({type: 'utility'});
+    for (const w of d.items) for (const x of w.system.activities) x.item = w;
     distance = 30; calls.length = 0;
     await run('midi-qol.premades.postRollFinished', {actor: d, token: d.token.object, targets: new Set([t.token.object]), item: {name: 'Interdict Boons: Vengeful Shot'}, activity: {flags: {'nix-module': {court: 'vengefulShot'}}}});
-    assert.deepEqual(specialUses, ['Longbow'], 'longbow, no prompt');
+    assert.equal(shots.length, 1, 'one roll');
+    assert.equal(shots[0].kind, 'activity', '1.7.4: the attack activity itself, not the item (no activity picker)');
+    assert.equal(shots[0].weapon, 'Longbow', 'longbow, no prompt'); assert.equal(shots[0].type, 'attack');
+    assert.deepEqual(shots[0].targets, [t.token.object], 'at the creature he targeted');
+    assert.equal(shots[0].o.options.workflowOptions.targetConfirmation, 'none', '1.7.4: no Target Confirmation');
+    assert.equal(shots[0].o.consumeResources, true);
+    assert.equal(shots[0].special, true, 'activation is "special" during the roll (his action isn\'t spent)');
+    assert.ok(enchants[0].changes.some(c => c.key === 'system.activation.type' && c.value === 'special'));
+    assert.equal(enchants[0].removed, true, 'and back to normal afterwards');
+    assert.deepEqual(specialUses, [], 'Chris\'s Premades\' specialItemUse is no longer used');
     assert.ok(!calls.some(c => c[0] === 'button'), 'no weapon prompt');
-    mkItem(d, {name: 'Shortbow', type: 'weapon', system: {equipped: true, type: {value: 'simpleR'}, range: {value: 80, long: 320}, properties: new Set(), activities: [{type: 'attack'}]}});
+    const sb = mkItem(d, {name: 'Shortbow', type: 'weapon', system: {equipped: true, type: {value: 'simpleR'}, range: {value: 80, long: 320}, properties: new Set(), activities: [{type: 'attack'}]}});
+    sb.system.activities[0].item = sb;
     buttonAnswer = d.items.find(i => i.name === 'Shortbow').id;
     await run('midi-qol.premades.postRollFinished', {actor: d, token: d.token.object, targets: new Set([t.token.object]), item: {name: 'Interdict Boons: Vengeful Shot'}, activity: {flags: {'nix-module': {court: 'vengefulShot'}}}});
     assert.deepEqual(calls.find(c => c[0] === 'button')?.[2], ['Longbow', 'Shortbow'], 'two ranged: asked, rapier not offered');
-    assert.equal(specialUses.at(-1), 'Shortbow');
+    assert.equal(shots.at(-1).weapon, 'Shortbow'); assert.equal(shots.length, 2);
+    buttonAnswer = null;
 }
 // ---- Honey-Sweet Blades
 {
@@ -157,14 +177,21 @@ const run = async (name, ...args) => { let r; for (const f of hooks[name] ?? [])
     globalThis.MidiQOL.Workflow.getWorkflow = u => u === 'Act.1' ? wf : null;
     const config = {subject: activity, rolls: [{parts: ['1d8', '@mod'], data: {mod: 4}, options: {type: 'slashing', properties: ['mgc']}}]};
     await run('dnd5e.preRollDamageV2', config);
-    assert.equal(config.rolls.length, 2, 'one extra roll in the same config');
-    assert.deepEqual(config.rolls[1].parts, ['1d8']);
-    assert.equal(config.rolls[1].options.type, 'necrotic');
-    assert.ok(wf.nixTerrorizing, 'no separate bonus roll afterwards');
+    assert.equal(config.rolls.length, 1, 'no second roll: one Roll Resolution window');
+    assert.deepEqual(config.rolls[0].parts, ['1d8', '@mod', '1d8[necrotic]'], 'die in the weapon formula, like Radiant Strikes');
+    assert.equal(config.rolls[0].options.type, 'slashing', 'weapon type kept');
+    assert.ok(config.rolls[0].options.nixTerrorizing && wf.nixTerrorizing, 'no separate bonus roll afterwards');
+    await run('dnd5e.preRollDamageV2', config);
+    assert.equal(config.rolls[0].parts.length, 3, 'not added twice');
     const missed = {subject: activity, rolls: [{parts: ['1d8']}]};
     wf.nixTerrorizing = false; wf.hitTargets = new Set();
     await run('dnd5e.preRollDamageV2', missed);
-    assert.equal(missed.rolls.length, 1, 'no hit: nothing added');
+    assert.equal(missed.rolls[0].parts.length, 1, 'no hit: nothing added');
+    // Midi workflow not found by uuid: still folded in (weapon damage is rolled on a hit)
+    globalThis.MidiQOL.Workflow.getWorkflow = () => null;
+    const loose = {subject: activity, rolls: [{parts: ['1d8'], options: {}}]};
+    await run('dnd5e.preRollDamageV2', loose);
+    assert.deepEqual(loose.rolls[0].parts, ['1d8', '1d8[necrotic]']);
 }
 // ---- Mage Slayer: concentration breaker
 {

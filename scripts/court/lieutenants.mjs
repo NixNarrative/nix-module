@@ -513,9 +513,11 @@ async function spellbreaker(wf) {
         const buttons = Array.from({length: have}, (_, i) => ['Burn ' + (i + 1) + ' seal' + (i ? 's' : '') + ': Counterspell at level ' + (3 + i), i + 1]).concat([['No', false]]);
         const n = await ask('Spellbreaker (' + va.name + ')', wf.actor.name + ' is casting a spell! Burn seals on them (no damage) to cast Counterspell with no slot? Spell Duel: d20 + Cha + counter level.', buttons);
         if (!n) continue;
+        // 1.7.4: the button value comes back from the dialog as a string ("1"): 2 + "1" was "21" (Spell Duel +21).
+        const count = Math.max(1, Math.min(have, Number(n) || 1));
         await gm('reaction', {actor: va.uuid});
-        await gm('removeSeals', {owner: va.uuid, token: tokUuid(wf.token), n});
-        const level = 2 + n, lvlT = castLevelOf(wf);
+        await gm('removeSeals', {owner: va.uuid, token: tokUuid(wf.token), n: count});
+        const level = 2 + count, lvlT = castLevelOf(wf);
         const vr = await new Roll('1d20 + ' + chaMod(va) + ' + ' + level).evaluate();
         await vr.toMessage({speaker: ChatMessage.getSpeaker({actor: va}), flavor: 'Spellbreaker (Spell Duel): d20 + Cha ' + chaMod(va) + ' + level ' + level});
         const cr = await new Roll('1d20 + ' + spellMod(wf.actor) + ' + ' + lvlT).evaluate();
@@ -560,10 +562,47 @@ const damageTypesOf = wf => {
     for (const t of ['healing', 'temphp', 'midi-none', 'none']) out.delete(t);
     return Array.from(out);
 };
+// 1.7.4 (cr-valintina-07): one casting covers every attack and damage roll of that spell (all of
+// Scorching Ray's rays, every beam, every target). The first damage roll spends the seal and opens the
+// casting; later workflows of the same spell by her join it (their targets become vulnerable too, no
+// second seal). The vulnerability no longer ends on the first damage: the casting ends when she uses
+// anything else, when the turn changes, or after a minute with nothing happening.
+const ENERVATE_IDLE = 60000;
+const ENERVATE_IMG = 'icons/magic/unholy/projectile-helix-blood-red.webp';
+async function enervateTargets(a, cast, wf, targets) {
+    const added = [];
+    for (const t of targets) {
+        if (!t?.actor || cast.marked.has(t.actor.uuid)) continue;
+        cast.marked.add(t.actor.uuid);
+        const id = await addEffect(t.actor, {name: 'Enervating Spell', img: ENERVATE_IMG, transfer: false, duration: {rounds: 1, seconds: 6},
+            description: 'Vulnerable to ' + cast.types.join(', ') + ' from ' + a.name + '\'s ' + wf.item.name + ' (every attack of this casting; ends when the casting is over).',
+            changes: cast.types.map(x => ({key: 'system.traits.dv.value', mode: ADD(), value: x, priority: 20})), flags: {[MODULE_ID]: {transient: true, enervateTemp: {caster: a.uuid}}}});
+        if (id) added.push(t);
+    }
+    return added;
+}
+function watchEnervate(casterUuid) {
+    setTimeout(() => {
+        const e = enervating.get(casterUuid);
+        if (!e) return;
+        if (e.expires <= Date.now()) endEnervate(casterUuid, true).catch(err => console.error(TITLE + ' | Enervating Spell', err));
+        else watchEnervate(casterUuid);
+    }, ENERVATE_IDLE + 500)?.unref?.();
+}
 async function enervate(wf) {
     const a = wf.actor;
-    const armed = a?.effects.find(e => e.flags?.[MODULE_ID]?.enervating);
-    if (!armed || wf.item?.type !== 'spell' || wf.nixEnervateDone) return;
+    if (!a || wf.item?.type !== 'spell' || wf.nixEnervateDone) return;
+    const cast = enervating.get(a.uuid);
+    if (cast && cast.item === (wf.item.uuid ?? wf.item.id)) {
+        // Another ray / beam / damage roll of the same casting.
+        wf.nixEnervateDone = true;
+        cast.expires = Date.now() + ENERVATE_IDLE;
+        const more = await enervateTargets(a, cast, wf, Array.from(wf.hitTargets?.size ? wf.hitTargets : wf.targets ?? []).filter(t => t.actor));
+        if (more.length) await say(a, '<b>Enervating Spell:</b> ' + more.map(t => esc(t.document.name)).join(', ') + ' vulnerable too (same casting of ' + esc(wf.item.name) + ').');
+        return;
+    }
+    const armed = a.effects.find(e => e.flags?.[MODULE_ID]?.enervating);
+    if (!armed) return;
     wf.nixEnervateDone = true;
     const skip = why => whisperGM('<b>Enervating Spell (' + esc(a.name) + '):</b> not used on ' + esc(wf.item.name) + ': ' + why + '. Still armed.');
     if (!illriggerSpell(wf.item)) return skip('not one of her illrigger spells (class ' + esc(spellClass(wf.item)) + ')');
@@ -574,41 +613,45 @@ async function enervate(wf) {
     if (!types.length) return skip('it deals no damage');
     if (!await spendSealsLocal(a, 1)) return skip('no seals left in her pool');
     await armed.delete();
-    const made = [];
-    const [self] = await a.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Enervating Spell (casting)', img: 'icons/magic/unholy/projectile-helix-blood-red.webp', transfer: false,
+    if (cast) await endEnervate(a.uuid, true);      // an older casting of another spell
+    const [self] = await a.createEmbeddedDocuments('ActiveEffect', fxAll([{name: 'Enervating Spell (casting)', img: ENERVATE_IMG, transfer: false,
         duration: {rounds: 1, seconds: 6},
         changes: types.flatMap(t => [{key: 'system.traits.idr.value', mode: ADD(), value: t, priority: 20}, {key: 'system.traits.idi.value', mode: ADD(), value: t, priority: 20}]),
         flags: {[MODULE_ID]: {transient: true, enervateTemp: {caster: true}}}}]));
-    for (const t of targets) {
-        const id = await addEffect(t.actor, {name: 'Enervating Spell', img: 'icons/magic/unholy/projectile-helix-blood-red.webp', transfer: false, duration: {rounds: 1, seconds: 6},
-            description: 'Vulnerable to ' + types.join(', ') + ' from ' + a.name + '\'s ' + wf.item.name + ' (ends when the damage lands).',
-            changes: types.map(x => ({key: 'system.traits.dv.value', mode: ADD(), value: x, priority: 20})), flags: {[MODULE_ID]: {transient: true, enervateTemp: {caster: a.uuid}}}});
-        if (id) made.push({actor: t.actor.uuid, id});
-    }
-    // The caster's ignore-resistance goes once every target has taken the damage (or after 1 minute).
-    enervating.set(a.uuid, {self: self?.id, left: new Set(made.map(m => m.actor)), expires: Date.now() + 60000});
-    setTimeout(() => endEnervate(a.uuid, true), 60000);
-    await say(a, '<b>Enervating Spell:</b> ' + esc(wf.item.name) + ' makes ' + targets.map(t => esc(t.document.name)).join(', ') + ' vulnerable to ' + types.join(', ') + ' (resistance and immunity suppressed).');
+    const now = {item: wf.item.uuid ?? wf.item.id, name: wf.item.name, self: self?.id, types, marked: new Set(), expires: Date.now() + ENERVATE_IDLE};
+    enervating.set(a.uuid, now);
+    await enervateTargets(a, now, wf, targets);
+    watchEnervate(a.uuid);
+    await say(a, '<b>Enervating Spell:</b> ' + esc(wf.item.name) + ' makes ' + targets.map(t => esc(t.document.name)).join(', ') + ' vulnerable to ' + types.join(', ')
+        + ' (resistance and immunity suppressed) for every attack of this casting.');
 }
-const enervating = new Map();   // casterUuid -> {self, left: Set(targetActorUuid), expires}
-async function endEnervate(casterUuid, all = false, targetUuid = null) {
+const enervating = new Map();   // casterUuid -> {item, name, self, types, marked: Set(targetActorUuid), expires}
+// The casting is over: her ignore-resistance and every vulnerability it made go.
+async function endEnervate(casterUuid) {
     const e = enervating.get(casterUuid);
-    if (!e) return;
-    if (targetUuid) e.left.delete(targetUuid);
-    if (!all && e.left.size) return;
     enervating.delete(casterUuid);
     const caster = actorFrom(casterUuid);
-    if (e.self) await caster?.effects.get(e.self)?.delete().catch(() => {});
-    if (all) for (const t of canvas.tokens?.placeables ?? []) for (const x of t.actor?.effects ?? [])
+    if (e?.self) await caster?.effects.get(e.self)?.delete().catch(() => {});
+    for (const t of canvas.tokens?.placeables ?? []) for (const x of Array.from(t.actor?.effects ?? []))
         if (x.flags?.[MODULE_ID]?.enervateTemp?.caster === casterUuid) await x.delete().catch(() => {});
 }
-// A target with the Enervating vulnerability took damage: the vulnerability ends (after this update).
+// She uses something else: the casting is over (Nix Fix's own burn / tick / save rolls don't count).
+async function enervateOther(wf) {
+    const cast = wf?.actor && enervating.get(wf.actor.uuid);
+    if (!cast || !wf.item) return;
+    const f = wf.item.flags?.[MODULE_ID];
+    if (f?.burnRoll || f?.spellTick || f?.courtSave) return;
+    if ((wf.item.uuid ?? wf.item.id) !== cast.item) await endEnervate(wf.actor.uuid);
+}
+// A target with the Enervating vulnerability took damage: the casting is still going (the idle clock
+// restarts). A vulnerability left over from a casting Nix Fix no longer knows (a reload) ends here.
 function enervateLanded(actor) {
     const marks = actor.effects.filter(e => typeof e.flags?.[MODULE_ID]?.enervateTemp?.caster === 'string');
-    if (!marks.length) return;
-    setTimeout(async () => {
-        for (const m of marks) { const c = m.flags[MODULE_ID].enervateTemp.caster; await m.delete().catch(() => {}); await endEnervate(c, false, actor.uuid); }
-    }, 300);
+    for (const m of marks) {
+        const cast = enervating.get(m.flags[MODULE_ID].enervateTemp.caster);
+        if (cast) cast.expires = Date.now() + ENERVATE_IDLE;
+        else setTimeout(() => m.delete().catch(() => {}), 300);
+    }
 }
 async function vileTransmogrification(actor, which) {
     const slots = Object.entries(actor.system.spells ?? {}).filter(([k, s]) => /^spell\d$/.test(k) && s.max > 0)
@@ -628,7 +671,8 @@ async function vileTransmogrification(actor, which) {
     const opts = [];
     for (let lvl = 1; lvl * 3 <= left; lvl++) { const s = slots.find(x => x.level === lvl); if (s && s.value < s.max) opts.push(['Spend ' + lvl * 3 + ' seals: level ' + lvl + ' slot', lvl]); }
     if (!opts.length) return ui.notifications.warn('Regaining Spell Slots: not enough seals for a missing slot (3 seals per slot level).');
-    const lvl = await ask('Vile Transmogrification: Regaining Spell Slots', 'Spend seals to regain a spell slot of one-third their number. ' + left + ' seals left.', opts.concat([['Cancel', false]]));
+    // 1.7.4: the dialog returns the button value as a string; `x.level === lvl` below needs the number.
+    const lvl = Number(await ask('Vile Transmogrification: Regaining Spell Slots', 'Spend seals to regain a spell slot of one-third their number. ' + left + ' seals left.', opts.concat([['Cancel', false]]))) || 0;
     if (!lvl) return false;
     await spendSealsLocal(actor, lvl * 3);
     const s = slots.find(x => x.level === lvl);
@@ -906,6 +950,7 @@ async function onPreamble(wf) {
         // 1.7.1: also on Midi's own midi-qol.preambleComplete (awaited; false aborts the cast), once per workflow.
         if (wf.nixCourtPreamble) return wf.aborted ? false : undefined;
         wf.nixCourtPreamble = true;
+        await enervateOther(wf);
         await markedForDeath(wf);
         await slipperyPloy(wf);
         if (wf.aborted) return false;
@@ -940,6 +985,8 @@ async function onUpdateCombat(combat, changed) {
     const prev = combat.combatants.get(combat.previous?.combatantId)?.actor;
     if (prev) await tickExpiring(prev.uuid).catch(err => console.error(TITLE + ' | court expiry', err));
     if (prev?.effects.some(e => e.flags?.[MODULE_ID]?.quid)) await quidSave(prev).catch(err => console.error(TITLE + ' | Quid Pro Quo save', err));
+    // 1.7.4: an Enervating Spell casting never outlives the turn it was cast on.
+    for (const k of Array.from(enervating.keys())) await endEnervate(k).catch(err => console.error(TITLE + ' | Enervating Spell', err));
 }
 
 export function registerLieutenants() {

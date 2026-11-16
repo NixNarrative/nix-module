@@ -187,7 +187,7 @@ const gwmHew = async () => {
     if (!target) return;
     if (inCombat) await MidiQOL.setBonusActionUsed(me);
     const activity = workflow.activity;
-    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target], {options: {workflowOptions: {nixHew: true}}}), 400);
+    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target], {options: {workflowOptions: {targetConfirmation: 'none', nixHew: true}}}), 400);
 };
  
 // ---- Sentinel: roll / nearbyRollFinished / 50 (enemies within 5 ft, filtered by CAT) ----
@@ -222,7 +222,7 @@ const sentinel = async () => {
     const activity = weapon.system.activities.find(a => a.type === 'attack');
     if (inCombat) await actorUtils.setReactionUsed(me);
     setTimeout(async () => {
-        const wf = await workflowUtils.syntheticActivityRoll(activity, [foe], {options: {workflowOptions: {nixSentinel: true}}});
+        const wf = await workflowUtils.syntheticActivityRoll(activity, [foe], {options: {workflowOptions: {targetConfirmation: 'none', nixSentinel: true}}});
         const hit = wf?.hitTargets?.size ? wf.hitTargets.first() : null;
         if (hit?.actor) await effectUtils.createEffects(hit.actor, [{
             name: 'Sentinel: Halted', img: feat.img, origin: feat.uuid,
@@ -333,7 +333,7 @@ const javelinLine = async () => {
     const zap = findAnim(['jb2a.static_electricity.01.blue', 'jb2a.static_electricity.02.blue'], ['static_electricity']);
     if (zap && globalThis.Sequence) { const s = new Sequence(); for (const t of inLine) s.effect().file(zap).atLocation(t).scaleToObject(1.4); s.play(); }
     const line = workflow.item.system.activities.find(x => x.name === 'Lightning Bolt: Line');
-    if (line) await workflowUtils.syntheticActivityRoll(line, inLine);
+    if (line) await workflowUtils.syntheticActivityRoll(line, inLine, {options: {workflowOptions: {targetConfirmation: 'none'}}});
 };
  
 // ---- Tina's Gravity Gloves ----------------------------------------------------------------

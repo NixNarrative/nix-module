@@ -70,6 +70,8 @@ function makeEffect(data, parent) {
     return e;
 }
 function makeActivity(id, data, item) {
+    // Foundry refuses an id that isn't 16 letters/digits (1.7.1's nixVengefulBld0 got through this mock).
+    if (!/^[A-Za-z0-9]{16}$/.test(String(id)) || (data?._id && !/^[A-Za-z0-9]{16}$/.test(String(data._id)))) throw new Error('activity [' + (data?._id ?? id) + '] validation errors: _id: must be a valid 16-character alphanumeric ID');
     const a = clone(data);
     a.id = a._id = id;
     a.flags ??= {};

@@ -81,7 +81,7 @@ const bashAsk = async () => {
     if (workflow.nixBashStamp) await feat.setFlag('world', 'nixBashTurn', workflow.nixBashStamp);
     const bash = feat.system.activities.find(a => a.name === 'Shield Bash');
     if (!bash) return;
-    const wf = await workflowUtils.syntheticActivityRoll(bash, [target], {options: {workflowOptions: {nixBash: true}}});
+    const wf = await workflowUtils.syntheticActivityRoll(bash, [target], {options: {workflowOptions: {targetConfirmation: 'none', nixBash: true}}});
     const failed = wf?.failedSaves?.size ? Array.from(wf.failedSaves) : [];
     for (const t of failed) {
         try { await tokenUtils.slideToken(t.document, {sourceToken: mine.document, distance: 5}); }
@@ -157,7 +157,7 @@ const rebuke = async () => {
     if (inCombat) await actorUtils.setReactionUsed(me);
     setTimeout(() => {
         const opts = pick === 'free' ? {consumeUsage: true} : {spellSlot: true, config: {spell: {slot: pick}}};
-        workflowUtils.syntheticActivityRoll(activity, [foe], {...opts, userId});
+        workflowUtils.syntheticActivityRoll(activity, [foe], {...opts, userId, options: {workflowOptions: {targetConfirmation: 'none'}}});
     }, 300);
 };
 // Adamantine Plate: roll / targetAttackRoll / 100 (targetAttackRollComplete is read-only on v14).

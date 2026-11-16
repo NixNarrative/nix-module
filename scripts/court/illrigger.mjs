@@ -49,14 +49,20 @@ function originDoc(effect) {
     try { return effect.origin ? fromUuidSync(effect.origin, {strict: false}) ?? null : null; }
     catch { return null; }
 }
+// 1.7.4: the origin can also be an ActiveEffect, the effect on the Baleful Interdict item itself.
+// That is what Midi writes when it applies an activity's effect (the Bonus Action "Place Seal"):
+// origin = Actor.X.Item.Y.ActiveEffect.Z. The Effects tab then shows the Illrigger's name as the
+// source (dnd5e swaps an effect source for its actor), which is why it looked like an actor origin.
 function originItem(effect) {
-    const o = originDoc(effect);
+    let o = originDoc(effect);
+    for (let i = 0; i < 3 && o?.documentName === 'ActiveEffect'; i++) o = o.parent ?? null;   // item effect -> its item
     if (o?.documentName === 'Item') return o;
     if (o?.item?.documentName === 'Item') return o.item;            // an activity
     return null;
 }
 export function originActor(effect) {
-    const o = originDoc(effect);
+    let o = originDoc(effect);
+    for (let i = 0; i < 3 && o?.documentName === 'ActiveEffect'; i++) o = o.parent ?? null;   // an actor's own effect -> the actor
     if (o?.documentName === 'Actor') return o;
     return originItem(effect)?.actor ?? null;
 }
@@ -76,6 +82,24 @@ export function isSeal(effect) {
     // Actor origin: only an Illrigger with a Baleful Interdict item, and only the seal itself.
     const a = originActor(effect);
     return !!a && !!a.items?.some?.(isBI) && /^baleful interdict(\s*:.*)?$/i.test(effect.name.trim());
+}
+// Seals that were on a creature before 1.7.4 without the Nix Fix form (a Bonus Action seal the engine
+// didn't recognise): give them the same name / origin / flag as every other seal. Active GM, whenever
+// an Illrigger's weapon hit is recorded on that creature.
+export async function normalizeSeals(actor) {
+    let n = 0;
+    for (const e of Array.from(actor?.effects ?? [])) {
+        if (!isSeal(e) || e.flags?.[MODULE_ID]?.seal) continue;
+        const owner = sealOwner(e);
+        if (!owner || !cfgOf(owner)) continue;
+        const item = biItem(owner);
+        const upd = {['flags.' + MODULE_ID + '.seal']: {owner: owner.uuid}, name: 'Baleful Interdict: ' + owner.name};
+        if (item && e.origin !== item.uuid) upd.origin = item.uuid;
+        if (ident(e) !== SEAL_ID) upd['flags.chris-premades.info.identifier'] = SEAL_ID;
+        await e.update(upd).catch(err => console.error(TITLE + ' | seal', err));
+        n++;
+    }
+    return n;
 }
 export const biItem = actor => actor?.items.filter(isBI)
     .sort((a, b) => (ident(b) === 'balefulInterdict') - (ident(a) === 'balefulInterdict') || (Number(b.system.uses?.max) || 0) - (Number(a.system.uses?.max) || 0))[0] ?? null;
@@ -456,6 +480,7 @@ async function onAttackComplete(workflow) {
         const dsTargets = [];
         for (const t of workflow.hitTargets) {
             if (!t?.actor || t.actor.uuid === attacker.uuid) continue;
+            await normalizeSeals(t.actor);
             hits.set(t.actor.uuid, {attacker, itemId: workflow.item?.id ?? null, itemName: workflow.item?.name ?? '', d20: workflow.d20AttackRoll ?? 0,
                 deathstrike: false, turn: turnKey(), expires: Date.now() + HIT_TTL});
             if (dsOk && sealsOf(t.actor, attacker).length && inReach(attacker, t)) dsTargets.push(t);
@@ -479,10 +504,13 @@ async function onRollFinished() {
 // Terrorizing Force on v13 (1.7.1): Nix Fix adds it, for every Court Illrigger the engine installer
 // flagged (flags.nix-module.terrorizingForce = {damageType}). Weapon attacks that hit, unarmed strikes
 // included; 2d8 in Infernal Majesty. v14: illrigger-features.mjs (CAT macro) does it.
-// 1.7.1: added to the weapon's own damage roll before it's rolled (dnd5e.preRollDamageV2), so manual
-// rolls ask once, like the weapon dice; the separate bonus roll below only runs if that hook didn't.
+// 1.7.3: the die goes INTO the weapon's first damage roll as "1d8[type]" (dnd5e.preRollDamageV2), the way
+// Radiant Strikes' damage bonus does, so manual dice ask once in one Roll Resolution window. (1.7.1 pushed a
+// second roll into the config, and Foundry resolves each roll in its own window.) The roll carries
+// options.nixTerrorizing so the fallback bonus roll below never doubles it.
 const tfItem = a => a?.items.find(i => i.flags?.[MODULE_ID]?.terrorizingForce) ?? null;
 const tfDice = a => a.effects.some(e => !e.disabled && !e.transfer && (ident(e) === 'infernalMajestyEffect' || /^infernal majesty/i.test(e.name))) ? '2d8' : '1d8';
+const tfFolded = wf => (wf?.damageRolls ?? []).some(r => r?.options?.nixTerrorizing);
 function onPreRollDamage(config) {
     try {
         if (isCat()) return;
@@ -492,17 +520,23 @@ function onPreRollDamage(config) {
         const tf = tfItem(a);
         if (!tf || !Array.isArray(config.rolls)) return;
         let wf;
-        try { wf = globalThis.MidiQOL?.Workflow?.getWorkflow?.(activity.uuid); } catch { wf = undefined; }
-        if (!wf || wf.nixTerrorizing || !wf.hitTargets?.size) return;
+        try { wf = config.workflow ?? globalThis.MidiQOL?.Workflow?.getWorkflow?.(activity.uuid); } catch { wf = undefined; }
+        if (wf && (wf.nixTerrorizing || !wf.hitTargets?.size)) return;     // no workflow found: weapon damage is rolled on a hit
+        if (config.rolls.some(r => r?.options?.nixTerrorizing)) return;
         const type = tf.flags[MODULE_ID].terrorizingForce.damageType || 'fire';
-        const first = config.rolls[0] ?? {};
-        config.rolls.push({parts: [tfDice(a)], data: first.data ?? activity.getRollData?.() ?? {},
-            options: {type, types: [type], properties: Array.from(first.options?.properties ?? []), flavor: tf.name}});
-        wf.nixTerrorizing = true;
+        const part = tfDice(a) + '[' + type + ']';
+        const first = config.rolls[0];
+        if (first && Array.isArray(first.parts)) {
+            first.parts.push(part);
+            first.options = {...(first.options ?? {}), nixTerrorizing: true};
+        } else {
+            config.rolls.push({parts: [part], data: activity.getRollData?.() ?? {}, options: {type, types: [type], nixTerrorizing: true}});
+        }
+        if (wf) wf.nixTerrorizing = true;
     } catch (err) { console.error(TITLE + ' | Terrorizing Force (damage roll)', err); }
 }
 async function terrorizingForce(workflow) {
-    if (isCat() || workflow?.nixTerrorizing) return;
+    if (isCat() || workflow?.nixTerrorizing || tfFolded(workflow)) return;
     const a = workflow?.actor;
     if (!a || !workflow.hitTargets?.size || workflow.item?.type !== 'weapon' || workflow.activity?.type !== 'attack') return;
     const tf = tfItem(a);
@@ -696,5 +730,5 @@ export function registerIllrigger() {
     Hooks.on('updateActor', onUpdateActor);
     Hooks.on('createActiveEffect', onCreateEffect);
     Hooks.on('dnd5e.preRollDamageV2', onPreRollDamage);
-    return {cfgOf, sealsOn, sealsOf, sealDice, placeSeal, executeRow, burnAll, canPlace, burnFormula, isSeal, promptBurn, moveSeals, trueNameSeals};
+    return {cfgOf, sealsOn, sealsOf, sealDice, placeSeal, executeRow, burnAll, canPlace, burnFormula, isSeal, promptBurn, moveSeals, trueNameSeals, normalizeSeals, sealOwner};
 }

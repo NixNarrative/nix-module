@@ -146,7 +146,30 @@ async function vengefulShot(wf) {
         w = a.items.get(id);
         if (!w) return;
     }
-    await cpr().workflowUtils.specialItemUse(w, [t], wf.item, {consumeResources: true, consumeUsage: true});
+    await featureAttack(w, [t], wf.item);
+}
+// 1.7.4 (cr-dayus-18, "still two pop-ups"): Chris's Premades' specialItemUse rolled the weapon ITEM with
+// no options, so a weapon with more than one activity opened dnd5e's "choose an activity" window and
+// Midi asked to confirm the target it had just been given. This rolls the weapon's attack activity
+// itself, at that target, with no Target Confirmation (engine.mjs fixedTargets), and keeps specialItemUse's
+// one trick: for that roll the weapon's activation is "special", so it doesn't spend his action.
+export function attackActivityOf(w) {
+    const list = w?.system?.activities?.contents ?? Array.from(w?.system?.activities ?? []);
+    return list.find(x => x.type === 'attack') ?? null;
+}
+export async function featureAttack(w, targets, source) {
+    const u = cpr();
+    const act = attackActivityOf(w);
+    if (!act) return u.workflowUtils.syntheticItemRoll(w, targets, {consumeUsage: true, consumeResources: true});
+    let ench = null;
+    try {
+        ench = await u.itemUtils?.enchantItem?.(w, {name: source?.name ?? 'Vengeful Shot', img: source?.img ?? w.img, origin: source?.uuid, duration: {seconds: 1},
+            changes: Object.keys(CONFIG.DND5E?.activityTypes ?? {attack: 1}).flatMap(k => [
+                {key: 'activities[' + k + '].activation.type', mode: 5, value: 'special', priority: 20},
+                {key: 'system.activation.type', mode: 5, value: 'special', priority: 20}])}) ?? null;
+    } catch (err) { console.warn(TITLE + ' | Vengeful Shot (activation)', err); }
+    try { return await u.workflowUtils.syntheticActivityRoll(act, targets, {consumeUsage: true, consumeResources: true}); }
+    finally { if (ench) await (u.genericUtils?.remove?.(ench) ?? ench.delete?.())?.catch?.(() => {}); }
 }
 
 // ======================================================== Infernal Conduit (v13)

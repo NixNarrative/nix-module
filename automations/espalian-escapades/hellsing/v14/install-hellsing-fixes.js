@@ -193,7 +193,7 @@ const agonyAttack = async () => {
     const data = {name: 'Bloated Agony', type: 'feat', img: eff.img, system: {activities: {nixAgonyDmg00001: {
         _id: 'nixAgonyDmg00001', type: 'damage', name: 'Bloated Agony', activation: {type: 'special'},
         damage: {parts: [{number: 1, denomination: 8, bonus: '', types: ['necrotic'], custom: {enabled: false}, scaling: {}}]}}}}};
-    await workflowUtils.syntheticItemDataRoll(data, src, [tok]);
+    await workflowUtils.syntheticItemDataRoll(data, src, [tok], {options: {workflowOptions: {targetConfirmation: 'none'}}});
     await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: me}), content: '<b>Bloated Agony:</b> ' + tok.document.name + ' attacked twice this turn and its swollen body tears (1d8 necrotic).'});
 };
 

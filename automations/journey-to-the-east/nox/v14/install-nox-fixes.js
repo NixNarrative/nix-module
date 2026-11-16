@@ -88,7 +88,7 @@ const uncanny = async () => {
     if (!yes) return;
     const heal = feat.system.activities?.find(a => a.type === 'heal');
     const tok = actorUtils.getFirstToken(me)?.object;
-    if (heal && tok) await workflowUtils.syntheticActivityRoll(heal, [tok], {consumeUsage: true, consumeResources: true});
+    if (heal && tok) await workflowUtils.syntheticActivityRoll(heal, [tok], {consumeUsage: true, consumeResources: true, options: {workflowOptions: {targetConfirmation: 'none'}}});
     else {
         if (feat.system.uses?.max) await documentUtils.update(feat, {'system.uses.spent': (feat.system.uses.spent ?? 0) + 1});
         const die = me.system.scale?.monk?.['martial-arts']?.die ?? ('1d' + (level >= 17 ? 12 : level >= 11 ? 10 : level >= 5 ? 8 : 6));
@@ -182,7 +182,7 @@ const sentinel = async () => {
     const activity = weapon.system.activities.find(a => a.type === 'attack');
     if (inCombat) await actorUtils.setReactionUsed(me);
     setTimeout(async () => {
-        const wf = await workflowUtils.syntheticActivityRoll(activity, [foe], {options: {workflowOptions: {nixSentinel: true}}});
+        const wf = await workflowUtils.syntheticActivityRoll(activity, [foe], {options: {workflowOptions: {targetConfirmation: 'none', nixSentinel: true}}});
         const hit = wf?.hitTargets?.size ? wf.hitTargets.first() : null;
         if (hit?.actor) await effectUtils.createEffects(hit.actor, [{
             name: 'Sentinel: Halted', img: feat.img, origin: feat.uuid,
@@ -402,7 +402,7 @@ const flurry = async () => {
     // ---- One strike ------------------------------------------------------------------
     const runStrike = async (t) => {
         return await workflowUtils.syntheticActivityRoll(strikeAct, [t],
-            {options: {targetConfirmation: 'none', nixFlurry: true, ...(canAnimate ? {cat: {skipWeaponAnimation: true}} : {})}});
+            {options: {workflowOptions: {targetConfirmation: 'none'}, nixFlurry: true, ...(canAnimate ? {cat: {skipWeaponAnimation: true}} : {})}});
     };
 
     const animated = new Set();

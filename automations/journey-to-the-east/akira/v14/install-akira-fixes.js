@@ -91,14 +91,14 @@ const fountReact = async () => {
         const spell = await fromUuid(eff.flags?.world?.nixFountSpell ?? eff.origin);
         const acts = spell?.system?.activities?.contents ?? [];
         const act = acts.find(a => a.type === 'save' && /blind/i.test(a.name ?? '')) ?? acts.find(a => a.type === 'save');
-        if (act) { await workflowUtils.syntheticActivityRoll(act, [foe]); return; }
+        if (act) { await workflowUtils.syntheticActivityRoll(act, [foe], {options: {workflowOptions: {targetConfirmation: 'none'}}}); return; }
         const dc = me.system.attributes?.spell?.dc ?? 13;
         const data = {name: 'Fount of Sunlight: Blinding Flare', type: 'feat', img: eff.img, system: {activities: {nixFountBlind001: {
             _id: 'nixFountBlind001', type: 'save', name: 'Blinding Flare', activation: {type: 'reaction'}, target: {affects: {type: 'creature', count: '1'}},
             save: {ability: ['con'], dc: {calculation: '', formula: String(dc)}}, effects: [{_id: 'nixFountBlindEf1'}]}}},
             effects: [{_id: 'nixFountBlindEf1', name: 'Blinded by Sunlight', img: 'icons/svg/blind.svg', transfer: false, statuses: ['blinded'],
                 duration: {value: 2, units: 'rounds'}, flags: {dae: {specialDuration: ['turnEndSource']}}}]};
-        await workflowUtils.syntheticItemDataRoll(data, me, [foe]);
+        await workflowUtils.syntheticItemDataRoll(data, me, [foe], {options: {workflowOptions: {targetConfirmation: 'none'}}});
     }, 400);
 };
 // On the radiance effect: effect / created and deleted. Golden glow on her token.
