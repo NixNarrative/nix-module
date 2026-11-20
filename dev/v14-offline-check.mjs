@@ -164,8 +164,9 @@ g.foundry = {utils: {deepClone: clone, getProperty, setProperty, mergeObject, is
     applications: {api: {DialogV2: {prompt: async () => null, wait: async () => null, confirm: async () => false}}}};
 g.game = {actors, scenes: new Collection(), user: {id: 'gm', isGM: true, character: null}, users: new Collection(),
     settings: {get: (n, k) => settings[n + '.' + k], set: async (n, k, v) => { settings[n + '.' + k] = v; }, settings: new Map()},
-    modules: new Collection([['chris-premades', {id: 'chris-premades', active: true, version: '2.1.6', title: 'CPR'}], ['cat', {id: 'cat', active: true, version: '0.1.6', title: 'CAT'}]]),
-    i18n: {localize: s => s, format: s => s}, system: {id: 'dnd5e', version: '6.0.6'}, release: {generation: 14}, combat: null, packs: new Collection()};
+    modules: new Collection([['chris-premades', {id: 'chris-premades', active: true, version: '2.1.9', title: 'CPR'}], ['cat', {id: 'cat', active: true, version: '0.1.9', title: 'CAT'}],
+        ['midi-qol', {id: 'midi-qol', active: true, version: '14.7.0', title: 'Midi QOL'}], ['dae', {id: 'dae', active: true, version: '14.6.10', title: 'DAE'}]]),
+    i18n: {localize: s => s, format: s => s}, system: {id: 'dnd5e', version: '6.1.1'}, release: {generation: 14}, combat: null, packs: new Collection()};
 g.CONST = {ACTIVE_EFFECT_CHANGE_TYPES: {ADD: 'add', OVERRIDE: 'override', UPGRADE: 'upgrade', CUSTOM: 'custom'}};
 g.CONFIG = {Canvas: {darknessAnimations: {}}, DND5E: {senses: {devilsSight: 'Devil\'s Sight'}}, Dice: {fulfillment: {methods: {}}}};
 g.ChatMessage = {create: async d => { log.chat.push(d.content); return d; }, getSpeaker: () => ({}), getWhisperRecipients: () => []};
@@ -209,6 +210,17 @@ const SCOPE = ['actor', 'token', 'item', 'scene', 'document', 'workflow', 'ditem
     'activityUtils', 'actorUtils', 'animationUtils', 'automationUtils', 'combatUtils', 'compendiumUtils', 'crosshairUtils', 'dataUtils', 'dialogUtils', 'documentUtils',
     'effectUtils', 'folderUtils', 'genericUtils', 'itemUtils', 'queryUtils', 'regionUtils', 'rollUtils', 'summonUtils', 'tokenUtils', 'uiUtils', 'workflowUtils',
     'constants', 'D20Bonus', 'DamageBonus'];
+// Comments are stripped before the helper tests: a header comment naming an old helper is not a use of it.
+const stripComments = c => String(c).replace(/(^|[^:\w'"`])\/\/[^\n]*/g, '$1');
+// CAT 0.1.9 / Midi 14.7 / dnd5e 6.1 API changes: consumeUsage is gone from the roll helpers, and a damage item's
+// damageDetail / rawDamageDetail became calculatedDamages / damages (old names only as a v13 fallback after ??).
+const API_0_1_9 = c => {
+    const out = [];
+    if (/\bconsumeUsage\b/.test(c)) out.push('consumeUsage (dropped in CAT 0.1.9: use consumeResources)');
+    if (/\.damageDetail\b/.test(c.replace(/calculatedDamages\s*\?\?\s*[\w.?]*\.damageDetail/g, ''))) out.push('ditem.damageDetail without "calculatedDamages ??" first');
+    if (/\.rawDamageDetail\b/.test(c.replace(/\.damages\s*\?\?\s*[\w.?]*\.rawDamageDetail/g, ''))) out.push('ditem.rawDamageDetail without "damages ??" first');
+    return out;
+};
 const BANNED = [/\btrigger\.(entity|actor|token|config|options|roll|data|saveId|skillId)/, /\bsocketUtils\./, /genericUtils\.(remove|update|setFlag|deleteEmbeddedDocuments)\b/,
     /effectUtils\.createEffect\(/, /combatUtils\.inCombat/, /\bDialogApp\b/, /preventDeath/, /ACTIVE_EFFECT_MODES/, /rollUtils\.remoteRoll/, /activityUtils\.getActivityByIdentifier/,
     /templateUtils\./, /\bchrisPremades\./, /effectUtils\.addDependent/, /dialogUtils\.selectDocumentsDialog/, /tokenUtils\.pushToken/, /workflowUtils\.replaceDamage/, /\bSummons\./];
@@ -221,7 +233,9 @@ for (const [where, d] of docs()) {
         for (const x of m.macros) {
             total++;
             try { new AsyncFn(...SCOPE, x.macro); } catch (e) { console.log('COMPILE FAIL', label, e.message); bad++; }
-            for (const b of BANNED) if (b.test(x.macro)) { console.log('V13 HELPER', label, b); bad++; }
+            const bare = stripComments(x.macro);
+            for (const b of BANNED) if (b.test(bare)) { console.log('V13 HELPER', label, b); bad++; }
+            for (const a of API_0_1_9(bare)) { console.log('CAT 0.1.9 API', label, a); bad++; }
             if (!/^\s*(\/\/[^\n]*\n\s*)*return await \(/.test(x.macro) && !/\nreturn await \(/.test(x.macro)) { console.log('NOT WRAPPED', label); bad++; }
             if (!quiet && !seen.has(label)) { seen.add(label); console.log('  ok', label, 'p' + x.priority); }
         }
@@ -231,7 +245,8 @@ for (const [where, d] of docs()) {
     const oldAct = d.flags?.['chris-premades']?.embeddedActivityMacros;
     if (oldAct && !quiet) for (const [id, l] of Object.entries(oldAct)) if (l?.length) console.log('  (old CPR1 activity macros left)', where, id, l.map(m => m.name).join(', '));
 }
-for (const b of BANNED) if (b.test(code.replace(/\/\/[^\n]*/g, ''))) console.log('V13 HELPER in installer body', b);
+for (const b of BANNED) if (b.test(stripComments(code))) console.log('V13 HELPER in installer body', b);
+for (const a of API_0_1_9(stripComments(code))) console.log('CAT 0.1.9 API in installer body:', a);
 console.log('\nmacros per run:', counts.join(' -> '), counts.every(c => c === counts[0]) ? '(stable)' : '(CHANGED: stacking?)');
 console.log('compiled', total, 'macros,', bad, 'problems;', log.warnings.length ? [...new Set(log.warnings)].slice(0, 5).join('; ') : 'no v13 effect.changes reads');
 console.log('\nCHAT (last run):');

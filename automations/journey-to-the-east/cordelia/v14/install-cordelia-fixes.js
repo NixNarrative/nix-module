@@ -347,7 +347,12 @@ async function familiar(famName, items) {
 {
     const ed = find(/^expert divination/i);
     if (!ed) report.push('<li><b>Expert Divination</b> not found.</li>');
-    else {
+    else if (premadeOn(ed) === 'cpr2') {
+        // Chris's Premades 2 has a (2014-rules) Expert Divination with the same slot prompt: don't add ours on top.
+        await setCat(ed, ['Expert Divination'], []);
+        await dropOld(ed, ['Expert Divination']);
+        report.push('<li>Expert Divination uses Chris\'s Premades 2\'s automation (ours not added, so she isn\'t asked twice).</li>');
+    } else {
         await setCat(ed, ['Expert Divination'], [entry('Expert Divination', 'roll', 'actorRollFinished', 60, expertDivination)]);
         await dropOld(ed, ['Expert Divination']);
         report.push('<li>Expert Divination: after she casts a Divination spell of 2nd level or higher with a slot, she picks an expended slot of a lower level (5th at most) to regain.</li>');

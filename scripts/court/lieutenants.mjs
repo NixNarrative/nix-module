@@ -23,7 +23,7 @@
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {biItem, cfgOf, executeRow, isActiveGM, living, placeSeal, sealsOf, sealsOn, tokenOf} from './illrigger.mjs';
-import {cpr, fxAll, isCat, MODES, HOOKS} from './engine.mjs';
+import {cpr, creatureTypeOf, fxAll, isCat, MODES, HOOKS} from './engine.mjs';
 
 export const FLAG = 'court';
 const CHANNEL = 'module.' + MODULE_ID;
@@ -55,7 +55,7 @@ const court = key => canvas.tokens?.placeables.filter(t => t.actor && keyOf(t.ac
 const quiet = wf => !!(wf?.item?.flags?.[MODULE_ID]?.burnRoll || wf?.item?.flags?.[MODULE_ID]?.courtSave || wf?.workflowOptions?.nixCourt);
 const say = (actor, content) => ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content});
 const whisperGM = content => ChatMessage.create({whisper: ChatMessage.getWhisperRecipients('GM').map(u => u.id), content});
-const typeOf = a => String(cpr()?.actorUtils?.typeOrRace?.(a) ?? a?.system?.details?.type?.value ?? '').toLowerCase();
+const typeOf = a => creatureTypeOf(a);
 const isAttack = wf => wf?.activity?.type === 'attack' || !!wf?.activity?.attack;
 const isSaveAct = wf => wf?.activity?.type === 'save' || !!wf?.activity?.save?.ability?.size;
 const attackType = (wf, t) => !!cpr()?.workflowUtils?.isAttackType?.(wf, t);
@@ -550,7 +550,7 @@ async function submit(wf) {
     for (const t of cand.filter(t => pick[t.id])) {
         await executeRow({owner: a, token: t, n: 2, type: pick.type, boons: {}});
         await addEffect(t.actor, {name: 'Submit', img: 'icons/magic/control/debuff-chains-shackle-movement-red.webp', transfer: false, duration: {rounds: 1},
-            changes: [{key: 'flags.midi-qol.disadvantage.ability.save.all', mode: OV(), value: '1', priority: 20}], flags: {dae: {specialDuration: ['isSave']}}});
+            changes: [{key: 'flags.midi-qol.disadvantage.save.all', mode: OV(), value: '1', priority: 20}], flags: {dae: {specialDuration: ['isSave']}}});
     }
 }
 // Enervating Spell: armed by its activity (1/day); the next damaging illrigger spell of 1st level+ spends a seal.
@@ -755,7 +755,7 @@ async function dealBefore(wf) {
             const d = e.flags[MODULE_ID].deal;
             if (!await cpr().dialogUtils.confirm('Let\'s Make a Deal', t.document.name + ' must save against ' + wf.item.name + '. Strike the deal? (advantage, +' + d.bonus + ')', {userId: gmId()})) continue;
             await addEffect(t.actor, {name: 'Deal struck', img: e.img, transfer: false, duration: {turns: 1},
-                changes: [{key: 'flags.midi-qol.advantage.ability.save.all', mode: OV(), value: '1', priority: 20},
+                changes: [{key: 'flags.midi-qol.advantage.save.all', mode: OV(), value: '1', priority: 20},
                     {key: 'system.bonuses.abilities.save', mode: ADD(), value: '+' + d.bonus, priority: 20}], flags: {dae: {specialDuration: ['isSave']}}});
             (wf.nixDeal ??= {}).saves = [...(wf.nixDeal.saves ?? []), tokUuid(t)];
         }
@@ -774,7 +774,7 @@ async function dealAfter(wf) {
         } else {
             await addEffect(actor, {name: 'Bad Deal', img: 'icons/sundries/documents/document-torn-diagram-tan.webp', transfer: false, duration: {seconds: 600},
                 description: 'Disadvantage on the next attack roll or saving throw (it can\'t be cancelled by advantage: adjudicate if both apply).',
-                changes: [{key: 'flags.midi-qol.disadvantage.attack.all', mode: OV(), value: '1', priority: 20}, {key: 'flags.midi-qol.disadvantage.ability.save.all', mode: OV(), value: '1', priority: 20}],
+                changes: [{key: 'flags.midi-qol.disadvantage.attack.all', mode: OV(), value: '1', priority: 20}, {key: 'flags.midi-qol.disadvantage.save.all', mode: OV(), value: '1', priority: 20}],
                 flags: {dae: {specialDuration: ['1Attack', 'isSave']}}});
             await say(owner, '<b>Deal broken:</b> ' + esc(actor.name) + ' has disadvantage on its next attack roll or saving throw.');
         }

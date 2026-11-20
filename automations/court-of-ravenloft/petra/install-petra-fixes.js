@@ -204,7 +204,7 @@ const illOmen = async () => {
     for (const t of foes) {
         await effectUtils.createEffect(t.actor, {
             name: 'Beast of Ill Omen', img: trigger.entity.img, origin: spellUuid, duration: {seconds: 6, turns: 1},
-            changes: [{key: 'flags.midi-qol.disadvantage.ability.save.all', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1', priority: 20}],
+            changes: [{key: 'flags.midi-qol.disadvantage.save.all', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1', priority: 20}],
             description: 'Within 5 ft of a shadow beast: disadvantage on saves against ' + workflow.item.name + '.',
             flags: {world: {nixIllOmen: {spellUuid}}, 'chris-premades': {embeddedMacros: [
                 {name: 'Ill Omen: done', type: 'midi-actor', pass: 'sceneRollFinished', priority: 50, macro: P.wrap(cleanup)}]}}
@@ -296,5 +296,14 @@ else {
     await setMacros(walk, [{name: 'Shadow Walk teleport', type: 'midi-item', pass: 'rollFinished', priority: 50, macro: P.wrap(shadowWalk)}]);
     report.push('<li>Shadow Walk: pick a spot within 120 ft and she teleports; chat flags it if either end is in bright light.</li>');
 }
+
+// ---- 5. Transmuted Spell: necrotic too ("Queen of Death", homebrew, 1.7.5) ------------------
+// Read by the Sorcerer core's Transmuted Spell: necrotic is offered next to the six RAW types, and her necrotic
+// spells can be transmuted to any of them. Only on Petra (other sorcerers on the core keep the RAW list).
+// 1.7.5: creature type for the Nix Fix checks (Nix 2026-11-16: Petra is fey).
+await actor.update({'flags.nix-module.creatureType': 'fey'});
+if (actor.type === 'npc' && actor.system.details?.type && actor.system.details.type.value !== 'fey') await actor.update({'system.details.type.value': 'fey'});
+await actor.update({'flags.nix-module.transmutedExtraTypes': ['necrotic']});
+report.push('<li>Transmuted Spell (homebrew): <b>necrotic</b> is offered next to acid, cold, fire, lightning, poison and thunder, and her necrotic spells (Blight, Finger of Death...) can be transmuted too. Needs the Sorcerer core 1.7.5 (re-apply it).</li>');
 
 await ChatMessage.create({whisper: [game.user.id], content: '<b>Petra fixes on ' + actor.name + '</b><ul>' + report.join('') + '</ul>'});

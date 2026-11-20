@@ -196,7 +196,9 @@ function systemFrom(src, cr) {
     return {
         abilities: s.abilities, skills: s.skills, tools: s.tools, bonuses: s.bonuses, spells: s.spells, currency: s.currency, traits: s.traits,
         attributes,
-        details: {...deep(s.details ?? {}), cr},
+        // 1.7.5: the NPC's creature type follows Nix Fix's own setting on the character (Dhampir vampires: undead).
+        details: {...deep(s.details ?? {}), cr, ...(src.flags?.[MODULE_ID]?.creatureType
+            ? {type: {...deep(s.details?.type ?? {}), value: src.flags[MODULE_ID].creatureType}} : {})},
         resources: {
             legact: {max: Number(b?.legendaryBase ?? la0(src)) || 0, spent: 0},
             legres: {max: Number(lr?.system.uses?.max) || 0, spent: Number(lr?.system.uses?.spent) || 0},

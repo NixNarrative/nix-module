@@ -91,14 +91,14 @@ const fountReact = async () => {
         const spell = await fromUuid(eff.flags?.world?.nixFountSpell ?? eff.origin);
         const acts = spell?.system?.activities?.contents ?? [];
         const act = acts.find(a => a.type === 'save' && /blind/i.test(a.name ?? '')) ?? acts.find(a => a.type === 'save');
-        if (act) { await workflowUtils.syntheticActivityRoll(act, [foe], {options: {workflowOptions: {targetConfirmation: 'none'}}}); return; }
+        if (act) { await workflowUtils.syntheticActivityRoll(act, [foe.document ?? foe], {options: {workflowOptions: {targetConfirmation: 'none'}}}); return; }
         const dc = me.system.attributes?.spell?.dc ?? 13;
         const data = {name: 'Fount of Sunlight: Blinding Flare', type: 'feat', img: eff.img, system: {activities: {nixFountBlind001: {
             _id: 'nixFountBlind001', type: 'save', name: 'Blinding Flare', activation: {type: 'reaction'}, target: {affects: {type: 'creature', count: '1'}},
             save: {ability: ['con'], dc: {calculation: '', formula: String(dc)}}, effects: [{_id: 'nixFountBlindEf1'}]}}},
             effects: [{_id: 'nixFountBlindEf1', name: 'Blinded by Sunlight', img: 'icons/svg/blind.svg', transfer: false, statuses: ['blinded'],
                 duration: {value: 2, units: 'rounds'}, flags: {dae: {specialDuration: ['turnEndSource']}}}]};
-        await workflowUtils.syntheticItemDataRoll(data, me, [foe], {options: {workflowOptions: {targetConfirmation: 'none'}}});
+        await workflowUtils.syntheticItemDataRoll(data, me, [foe.document ?? foe], {options: {workflowOptions: {targetConfirmation: 'none'}}});
     }, 400);
 };
 // On the radiance effect: effect / created and deleted. Golden glow on her token.
@@ -393,6 +393,11 @@ const spellfire = async () => {
         }
         await dropOld(bi, ['Font of Inspiration: spend a slot']);
         if (cis.length > 1) report.push('<li><i>' + cis.length + ' Combat Inspiration items: delete the extra copy.</i></li>');
+        // Chris's Premades 2.1.7+ has its own Combat Inspiration: Midi's "add to AC" optional prompt on EVERY attack
+        // (the one Nix had removed) plus a damage bonus. Applied next to ours, both offer the die.
+        const theirs = cis.filter(i => premadeOn(i) === 'cpr2');
+        if (theirs.length) report.push('<li><b>Combat Inspiration has Chris\'s Premades 2\'s own automation</b> (new in 2.1.7): it brings back the "add to AC" prompt on every attack and adds its own damage option next to ours. '
+            + 'Set it to <b>None</b> in the Medkit (ours does Defense only when an attack would hit, and Offense), then re-apply Bardic Inspiration and run Akira fixes again.</li>');
     }
 }
  

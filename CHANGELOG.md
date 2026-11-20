@@ -1,3 +1,46 @@
+# 1.7.5 (2026-11-20): v14 caught up for Chris's Premades 2.1.9 / CAT 0.1.9, and the To Do list
+Built 2026-11-20, not table-tested yet. The v14 world now runs Chris's Premades 2.1.9, CAT 0.1.9, Midi QOL 14.7.0, DAE 14.6.10 and dnd5e 6.1.1; everything below was checked against their source.
+
+**For the update (v14)**
+- **Dracula's Regeneration counts radiant again, Bloodrift counts necrotic.** Midi 14.7 renamed a damage item's lists (`calculatedDamages` / `damages`); both read the new names first and fall back to the old ones, so v13 is unchanged.
+- **Version check** expects dnd5e 6.1, Midi 14.7.0, Chris's Premades 2.1.9, CAT 0.1.9, DAE 14.6.10, Automated Animations 8.0.7.
+- **`consumeUsage` is gone from CAT's roll helpers.** Nix Fix no longer passes it on v14 (v13's Chris's Premades 1 still gets it). One real fix: **Earwyn's Hellish Rebuke free cast also spent a spell slot** under CAT 0.1.9; now the free cast spends only the spell's use, and a slot cast only the slot.
+- **Vina:** her fixes report "re-apply Warding Flare / Improved Warding Flare in the Medkit" while they are older than 2.1.9 (Improved Warding Flare gives no temp HP until then).
+- Offline checkers: no false "V13 HELPER" from comments in embedded macros; a new CAT 0.1.9 API check; mocks at the new versions.
+
+**v14 characters, compared with their v13 fixes**
+- **Westly: Radiant Strike, Silent Strike, Goad and Awe are offered again.** Chris's Premades 2.1.9's Sneak Attack menu only lists strikes tagged for it; ours are now, and the Sneak Attack dice turn radiant / necrotic after the menu (they never changed before). Swashbuckler 13 / 17: Invigorate and Parrying Stance tagged the same way; Master Duelist notices the Sneak Attack (it didn't).
+- **Akira:** warns if Combat Inspiration has Chris's Premades 2's own automation (new in 2.1.7), which brings back the "add to AC" prompt on every attack.
+- **Cordelia:** Expert Divination steps aside when Chris's Premades 2's is applied.
+- **Earwyn:** a Prone the Trident put on her is removed (from v13).
+- **Bangiras:** warns when Automated Masteries 5e and CAT both run weapon masteries (two Topple saves).
+- Every Nix Fix roll at a creature it picked hands CAT the token document (Akira, Earwyn, Quez, Nox, Peri, Hellsing, Silkie, Eldritch Blast, Swashbuckler, Court Sentinels).
+- Everything else matched feature by feature; Cordelia's and Tsuki's 1.7.4 v13 change isn't needed on v14 (no such roll there). Life Bond stays retired: 2.1.9's Find Steed still has it.
+
+**From the To Do list (v13 and v14)**
+- **Beasts of Ill Omen disadvantage works.** Midi removed the `advantage.ability.save` / `.ability.check` flag names (13.0.49); the effect now uses `disadvantage.save.all`. Same dead name fixed in Valintina's Submit, Let's Make a Deal, Hell's Lash, Hellsing's Bloated Agony and Hybrid Transformation, and Silkie's save advantage.
+- **Petra: Sorcerous Burst rolls d8s** (it rolled "4d86" on v13), and a damaged formula is repaired.
+- **Innate Sorcery lands on the sorcerer without targeting** (range / target Self, no confirmation), with Umbral Form, Sorcery Incarnate, Sorcerous Restoration and Metamagic primes.
+- **Petra: Transmuted Spell offers necrotic, and transmutes her necrotic spells** (homebrew, her only).
+- **Wall of Death:** the area no longer vanishes right after the cast (Midi's instantaneous-template removal), Petra is asked to spend her reaction for temp HP equal to each tick's damage, and a green fire ring plays on the wall while it lasts.
+- **Court creature types:** Dracula, Dayus, Lucian, Valintina and Sydmore are undead for Nix Fix (Negative Energy Flood feeds them), Petra fey, Zadimus and Father Octavian humanoid; NPC stat blocks follow.
+- **Prismatic Wall:** players can see past it (only the glare blinds), and everyone not on Petra's side within 20 ft when it appears makes the glare save.
+- **Prismatic Wall is a real wall now** (Nix's rulings 2026-11-20). Nothing reaches a creature behind it while a layer stands: an attack or spell aimed across it by anyone not on Petra's side hits the outermost layer instead, with no dialog. An attack needs 10 or more to hit it (natural 1 misses, a crit hits). **Melee attacks count too:** a melee attack at a creature inside the globe (or across the wall) goes ahead even out of reach and hits the wall. Each damage layer has hit points that only its damage type wears down, and the damage adds up over hits from anyone: red 20 cold, **orange 30 thunder**, yellow 40 force, **green 50 lightning**, blue 60 fire. **The globe is 70 ft across** (35 ft radius) when cast, wherever it is centred, and **shrinks by 10 ft each time a layer falls**, down to 10 ft with only violet left. The straight wall keeps its length. Other damage types do nothing, and damage beyond what breaks a layer doesn't carry on to the next one. Daylight breaks indigo and Dispel Magic breaks violet. Chat shows each layer's wear ("12 / 25 cold, 13 left") and when it is destroyed; "Destroy a layer" shows the outer layer's wear too. A **teleport** across the wall (Misty Step and the like) stops just short of it and meets the outer layer; walking through still runs every layer.
+- **Bangiras moved to the Sorcerer core** (same as Petra). His fixes keep Stasis, Sand Shroud, Mantle of Flame, Phoenix Spark and Hold.
+- **Book of Vile Darkness (Petra):** Dark Speech hits non-evil creatures within 15 ft for 3d6 psychic with no save and no daily limit, and Petra takes 1d12; Command Evil (Dominate Monster) has its own use per dawn.
+- Offline: new `dev/damage-lists.test.mjs`, additions in `court-engine` and `petra-spells`; all 12 `dev/*.test.mjs` pass. v14 offline check of every changed installer against `exports/v14` (with `--select`, 2 runs): 0 problems, stable.
+
+**To do in the world:**
+- **Both worlds:** install 1.7.5 and reload (F5).
+- **v13 (Barovia / the campaigns):** re-apply Petra: Sorcerer core, Petra fixes, Petra: spells; Bangiras: Metamagic fix-up, then the new **Sorcerer core (2024)** row, then Bangiras fixes; Dracula's boss kit and each Court Illrigger's fixes (Dayus, Lucian, Sydmore, Valintina, Father Octavian, Zadimus; character, then the NPC in the same slot) for the creature types; Hellsing fixes and Silkie fixes (flag names). Then run Make stat block again for any NPC made before this.
+- **v14, the world was on 1.7.0, so this covers 1.7.1 to 1.7.5.** First in the Medkit: Vina's **Warding Flare** and **Improved Warding Flare** (2.1.9 rewrote them); leave **Combat Inspiration** (Akira) at None. Watch-outs, apply only if you want them: Sydmore's Crusher / Grappler / Tavern Brawler (three prompts per unarmed hit on v14), Dayus's Piercer (re-apply his fixes after). Then apply, in this order:
+  - World: Counterspell, Eldritch Blast beam windows, Darkness & Devil's Sight, Daylight / Dawn, Lucky, War Caster.
+  - Court of Ravenloft (the Prismatic Wall changes are in the module itself, nothing to re-apply for them): Illrigger engine; Dracula boss kit and Bloodrift; Petra: Metamagic fix-up, Sorcerer core, Petra fixes, Petra: spells; Dayus, Lucian, Sydmore, Valintina fixes then boss kits; Father Octavian and Zadimus fixes (1.7.1 captains, 1.7.4 buttons and seals, 1.7.5 creature types and Sentinel).
+  - The Fool's Journey: Bangiras (Metamagic fix-up, Magicians Judge setup, **Sorcerer core**, Bangiras fixes, Seeking Spell, Ring: Shift Spell, Ring: Spell Surge, Shadowfell Shard), Earwyn fixes (Hellish Rebuke), Nethtari fixes, Quez fixes, Vina fixes (after the Medkit step), Westly fixes (Cunning Strikes).
+  - Journey to the East: Akira, Cordelia, Nox, Peri, Tsuki fixes.
+  - Espalian Escapades: Hellsing, Lyric, Silent Silk, Silkie fixes.
+  - Check each installer's chat report for "apply in the Medkit" lines, and the version check (Health) should show no warnings for the new versions.
+
 # 1.7.4 (2026-11-15): Court table-test fixes, no Target Confirmation on Nix Fix's own rolls
 Built 2026-11-15, not table-tested yet. Fixes from the 2026-11-15 v13 session.
 

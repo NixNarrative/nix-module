@@ -83,17 +83,22 @@ const parry = async () => {
         flags: {cat: {identifier: 'nixParryingStance'}}
     }]);
 };
-// Master Duelist: roll / actorDamageRollBonuses / 5 and / 950: did Sneak Attack add dice?
+// Master Duelist: did Sneak Attack land? 1.7.5 (Chris's Premades 2.1.9): Sneak Attack is an optional damage bonus
+// that CAT applies after actorDamageRollBonuses, so the old check there never saw it. It now listens to CPR's
+// own "Sneak Attack used" called event (called / actorSneakAttackUsed, data = {workflow, targetToken}), with a
+// fallback after the bonuses (actorDamageRollComplete): the attack qualified (canSneak) and a damage roll was added.
+const duelistUsed = async () => {
+    const wf = data?.workflow;
+    if (wf) wf.nixSneakUsed = true;
+};
 const duelistMark = async () => {
-    const sneak = workflow.actor.items.find(i => /^sneak attack$/i.test(i.name.trim()));
-    workflow.nixDuelistBefore ??= {rolls: workflow.damageRolls?.length ?? 0, spent: sneak?.system.uses?.spent ?? 0};
+    workflow.nixDuelistBefore ??= {rolls: workflow.damageRolls?.length ?? 0};
 };
 const duelistCheck = async () => {
     const b = workflow.nixDuelistBefore;
-    if (!b) return;
-    const sneak = workflow.actor.items.find(i => /^sneak attack$/i.test(i.name.trim()));
-    const sneakRoll = (workflow.damageRolls ?? []).some(r => /sneak/i.test(String(r.options?.flavor ?? '') + String(r.options?.itemName ?? '')));
-    if ((sneak?.system.uses?.spent ?? 0) > b.spent || (workflow.damageRolls?.length ?? 0) > b.rolls || sneakRoll) workflow.nixSneakUsed = true;
+    if (!b || workflow.nixSneakUsed) return;
+    const qualified = !!workflowUtils.getWorkflowProperty(workflow, 'canSneak');
+    if (qualified && (workflow.damageRolls?.length ?? 0) > b.rolls) workflow.nixSneakUsed = true;
 };
 // Master Duelist: roll / actorRollFinished / 600.
 const duelist = async () => {
@@ -114,7 +119,7 @@ const duelist = async () => {
     if (!yes) return;
     if (inCombat) await feat.setFlag('world', 'nixDuelistTurn', stamp);
     const activity = workflow.activity;
-    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target], {options: {workflowOptions: {targetConfirmation: 'none', nixDuelist: true}}}), 500);
+    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target.document ?? target], {options: {workflowOptions: {targetConfirmation: 'none', nixDuelist: true}}}), 500);
 };
  
 // ---- Install ----------------------------------------------------------------------------
@@ -132,11 +137,17 @@ if (level >= 13) {
     const invAct = await ensureActivity(cs, 'Invigorate', 'utility', strikeData(2, {
         img: inv.img, range: {units: 'ft', value: '30', override: true}, effects: [{_id: inv.id}],
         description: {chatFlavor: 'One creature within 30 ft adds 1d6 to attack rolls and saving throws until the end of its next turn.'}}));
+    // 1.7.5: Chris's Premades 2.1.9 lists a Cunning Strike only when the activity carries its attackRider generic
+    // tagged 'cunningStrike' (it then rolls the activity itself after the hit).
+    const RIDER = {'flags.cat.macros.roll': [{source: 'chris-premades', identifier: 'attackRider', rules: 'all'}],
+        'flags.cat.genericConfig.chris-premades.attackRider': {tag: 'cunningStrike', workflowProperty: 'canSneak'}};
+    if (invAct) await invAct.update(RIDER);
     await setCat(invAct, ['Invigorate target'], [entry('Invigorate target', 'roll', 'activityPreambleComplete', 50, invigorate)]);
     const parryAct = await ensureActivity(cs, 'Parrying Stance', 'utility', strikeData(2, {
         img: 'icons/skills/melee/sword-shield-stylized-white.webp', range: {units: 'self', override: true},
         target: {affects: {type: 'self'}, override: true},
         description: {chatFlavor: 'Roll 1d6 and add it to your AC until the start of your next turn.'}}));
+    if (parryAct) await parryAct.update({...RIDER, 'flags.cat.genericConfig.chris-premades.attackRider': {tag: 'cunningStrike', workflowProperty: 'canSneak', selfAsTouch: false}});
     await setCat(parryAct, ['Parrying Stance'], [entry('Parrying Stance', 'roll', 'activityRollFinished', 50, parry)]);
     await dropOld(cs, ['Invigorate target', 'Parrying Stance']);
     report.push('<li>Dashing Strikes: <b>Invigorate</b> (2d6) and <b>Parrying Stance</b> (2d6) added to the Cunning Strike menu.</li>');
@@ -148,9 +159,10 @@ if (level >= 17) {
         img: 'icons/skills/melee/swords-parry-block-yellow.webp',
         system: {type: {value: 'class', subtype: ''}, requirements: 'Swashbuckler 17',
             description: {value: '<p><em>Swashbuckler 5.5 update.</em> Immediately after you use your Sneak Attack, you can make another attack against the same target if you are within 5 feet of it and no other creatures are within 5 feet of you.</p>'}}}]))[0];
-    await setCat(duel, ['Master Duelist mark', 'Master Duelist check', 'Master Duelist'], [
+    await setCat(duel, ['Master Duelist mark', 'Master Duelist check', 'Master Duelist sneak used', 'Master Duelist'], [
         entry('Master Duelist mark', 'roll', 'actorDamageRollBonuses', 5, duelistMark),
-        entry('Master Duelist check', 'roll', 'actorDamageRollBonuses', 950, duelistCheck),
+        entry('Master Duelist check', 'roll', 'actorDamageRollComplete', 50, duelistCheck),
+        entry('Master Duelist sneak used', 'called', 'actorSneakAttackUsed', 50, duelistUsed),
         entry('Master Duelist', 'roll', 'actorRollFinished', 600, duelist)]);
     await dropOld(duel, ['Master Duelist mark', 'Master Duelist check', 'Master Duelist']);
     report.push('<li><b>Master Duelist</b>: after a Sneak Attack within 5 ft (and no one else within 5 ft of him) he is offered another attack against the same target.</li>');

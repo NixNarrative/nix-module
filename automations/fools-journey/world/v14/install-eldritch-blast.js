@@ -160,7 +160,7 @@ const beams = async () => {
             queue[dmgFaces] = [...v.dmg];
             current = '[' + t.document.name + ']';
             if (!t.actor || ((t.actor.system.attributes?.hp?.value ?? 1) <= 0 && plan.length > 1)) { luckyQueues[t.actor?.uuid]?.shift(); continue; }   // already down
-            await workflowUtils.syntheticActivityRoll(beam, [t], {options: {workflowOptions: {targetConfirmation: 'none'}, nixBeam: i}});
+            await workflowUtils.syntheticActivityRoll(beam, [t.document ?? t], {options: {workflowOptions: {targetConfirmation: 'none'}, nixBeam: i}});
             queue[20] = []; queue[dmgFaces] = [];
         }
     } finally {

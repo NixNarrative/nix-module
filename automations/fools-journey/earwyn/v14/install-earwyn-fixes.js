@@ -81,7 +81,7 @@ const bashAsk = async () => {
     if (workflow.nixBashStamp) await feat.setFlag('world', 'nixBashTurn', workflow.nixBashStamp);
     const bash = feat.system.activities.find(a => a.name === 'Shield Bash');
     if (!bash) return;
-    const wf = await workflowUtils.syntheticActivityRoll(bash, [target], {options: {workflowOptions: {targetConfirmation: 'none', nixBash: true}}});
+    const wf = await workflowUtils.syntheticActivityRoll(bash, [target.document ?? target], {options: {workflowOptions: {targetConfirmation: 'none', nixBash: true}}});
     const failed = wf?.failedSaves?.size ? Array.from(wf.failedSaves) : [];
     for (const t of failed) {
         try { await tokenUtils.slideToken(t.document, {sourceToken: mine.document, distance: 5}); }
@@ -156,8 +156,10 @@ const rebuke = async () => {
     if (!activity) return;
     if (inCombat) await actorUtils.setReactionUsed(me);
     setTimeout(() => {
-        const opts = pick === 'free' ? {consumeUsage: true} : {spellSlot: true, config: {spell: {slot: pick}}};
-        workflowUtils.syntheticActivityRoll(activity, [foe], {...opts, userId, options: {workflowOptions: {targetConfirmation: 'none'}}});
+        // CAT 0.1.9: only consumeResources / spellSlot count. Free cast: spend the spell's own use, no slot.
+        // Slot cast: spend that slot, not the free use.
+        const opts = pick === 'free' ? {consumeResources: true, spellSlot: false} : {consumeResources: false, spellSlot: true, config: {spell: {slot: pick}}};
+        workflowUtils.syntheticActivityRoll(activity, [foe.document ?? foe], {...opts, userId, options: {workflowOptions: {targetConfirmation: 'none'}}});
     }, 300);
 };
 // Adamantine Plate: roll / targetAttackRoll / 100 (targetAttackRollComplete is read-only on v14).
@@ -317,6 +319,9 @@ if (!trident) report.push('<li><b>Trident of the Cobalt Divide</b> not found.</l
 else {
     const proneFx = trident.effects.filter(e => e.transfer && (e.statuses?.has('prone') || /prone/i.test(e.name)));
     for (const e of proneFx) await e.update({transfer: false});
+    // Ported from v13: a Prone the trident already put on her (from when it transferred) is removed.
+    const stuck = actor.effects.filter(e => (e.statuses?.has('prone') || /prone/i.test(e.name)) && String(e.origin ?? '').includes(trident.id));
+    if (stuck.length) await actor.deleteEmbeddedDocuments('ActiveEffect', stuck.map(e => e.id));
     await setCat(trident, ['Lightning Conductor'], [entry('Lightning Conductor', 'roll', 'itemRollFinished', 60, conductor)]);
     await dropOld(trident, ['Lightning Conductor']);
     report.push('<li>Trident: a natural 20 that hits makes the target vulnerable to Lightning until the end of her next turn.' + (proneFx.length ? ' Its Prone effect no longer lands on her.' : '') + '</li>');

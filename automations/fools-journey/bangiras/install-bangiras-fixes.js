@@ -4,10 +4,8 @@
 //  Installs (as CPR Embedded Macros):
 //   - Magicians Judge: Stasis v2 (advantage vs Topple and other prone saves)
 //   - Magicians Judge: Sand Shroud animation (plays while the effect lasts)
-//   - Metamagic: Quickened Spell (spell list, Bonus Action used, Action given back)
-//   - Sorcery Incarnate (second Metamagic while Innate Sorcery is active)
-//     + updates Heightened and Twinned so they can be the second option
-//   - Sorcerous Restoration (asks after a Short Rest)
+//   - (1.7.5) Metamagic, Sorcery Incarnate, Innate Sorcery and Sorcerous Restoration moved to the
+//     shared "Sorcerer core (2024)" installer (same as Petra); this one no longer writes them
 //   - Mantle of Flame (starts/ends with Innate Sorcery) and Phoenix Spark (burst whenever used)
 //   - Hold Monster / Hold Person end-of-turn Wisdom saves
 //  And checks Fire Shield's CPR automation.
@@ -80,43 +78,14 @@ else {
     }
 }
  
-// ---- 2. Metamagic ------------------------------------------------------------------
-const points = actor.items.find(i => i.type === 'feat' && i.name.toLowerCase().trim() === 'sorcery points');
-const heightened = findItem(['heightened spell'], 'feat');
-const twinned = findItem(['twinned spell'], 'feat');
-const quickened = findItem(['quickened spell'], 'feat');
-const mm = {name: 'Metamagic', type: 'midi-item', pass: 'rollFinished', priority: 50};
-if (heightened) report.push('<li>Heightened Spell: ' + await replaceByCode(heightened, 'heightenedSpellPrimed', SCRIPTS.heightened, {...mm, name: 'Heightened Spell'}) + '.</li>');
-if (twinned) report.push('<li>Twinned Spell: ' + await replaceByCode(twinned, 'twinnedSpellPrimed', SCRIPTS.twinned, {...mm, name: 'Twinned Spell'}) + '.</li>');
-if (!quickened) report.push('<li><b>Quickened Spell</b> not found.</li>');
-else {
-    await replaceByCode(quickened, 'quickenedSpellPrimed', SCRIPTS.quickened, {...mm, name: 'Quickened Spell'});
-    const act = quickened.system.activities?.contents?.[0];
-    if (!act) report.push('<li><b>Quickened Spell</b> has no activity: add a Utility activity and run again.</li>');
-    else if (points && !(act.consumption?.targets ?? []).some(t => t.type === 'itemUses')) {
-        await act.update({'consumption.targets': [{type: 'itemUses', target: points.id, value: '2', scaling: {}}]});
-    }
-    report.push('<li>Quickened Spell installed (2 Sorcery Points).' + (cprAuto(quickened) ? ' <b>It still has a CPR automation: set it to None in the Medkit.</b>' : '') + '</li>');
-}
- 
-// ---- 3. Sorcery Incarnate ------------------------------------------------------------
-const incarnate = actor.items.find(i => i.name.toLowerCase().trim() === 'sorcery incarnate');
-if (!incarnate) report.push('<li><b>Sorcery Incarnate</b> not found.</li>');
-else {
-    await setMacros(incarnate, m => m.name === 'Sorcery Incarnate' || String(m.macro).includes('nixMetamagicPrimeOnly'), [
-        {name: 'Sorcery Incarnate', type: 'midi-actor', pass: 'rollFinished', priority: 20, macro: SCRIPTS.incarnate}]);
-    report.push('<li>Sorcery Incarnate installed.</li>');
-}
- 
-// ---- 4. Sorcerous Restoration --------------------------------------------------------
-const restoration = actor.items.find(i => i.name.toLowerCase().trim() === 'sorcerous restoration');
-if (!restoration) report.push('<li><b>Sorcerous Restoration</b> not found.</li>');
-else {
-    await setMacros(restoration, m => m.name === 'Sorcerous Restoration prompt', [
-        {name: 'Sorcerous Restoration prompt', type: 'rest', pass: 'short', priority: 50, macro: SCRIPTS.restoration}]);
-    report.push('<li>Sorcerous Restoration will ask after a Short Rest.</li>');
-}
- 
+// ---- 2-4. Metamagic, Sorcery Incarnate, Sorcerous Restoration: Sorcerer core (1.7.5) ------
+// Bangiras moved to the shared "Sorcerer core (2024)" (Nix 2026-11-16): it owns these macros (same names, so
+// applying it replaces the ones this installer used to write). Nothing is written here any more.
+const coreOn = actor.items.some(i => (i.flags?.cat?.embeddedMacros ?? i.flags?.['chris-premades']?.embeddedMacros ?? [])
+    .some(m => m.name === 'Metamagic'));
+report.push('<li>Metamagic (Quickened, Heightened, Twinned and the rest), Sorcery Incarnate, Innate Sorcery and Sorcerous Restoration come from the <b>Sorcerer core (2024)</b> now'
+    + (coreOn ? ' (applied).' : ': <b>apply it</b> (after the Metamagic fix-up, before these fixes).') + '</li>');
+
 // ---- 5. Fire Shield check -------------------------------------------------------------
 const fireShield = actor.items.find(i => i.type === 'spell' && i.name.toLowerCase().trim() === 'fire shield');
 if (fireShield) report.push(cprAuto(fireShield) === 'fireShield'

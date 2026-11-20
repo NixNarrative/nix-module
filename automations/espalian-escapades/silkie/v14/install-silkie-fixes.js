@@ -85,7 +85,7 @@ const agile = async () => {
         if (!pick) return;
         targets = [pick.object ?? pick];
     }
-    setTimeout(() => workflowUtils.syntheticActivityRoll(act, targets.slice(0, 1), {consumeResources: false, options: {workflowOptions: {targetConfirmation: 'none', nixAgile: true}}}), 400);
+    setTimeout(() => workflowUtils.syntheticActivityRoll(act, targets.slice(0, 1).map(t => t.document ?? t), {consumeResources: false, options: {workflowOptions: {targetConfirmation: 'none', nixAgile: true}}}), 400);
 };
 
 // Robe of Useful Items: roll / activityRollFinished / 50 on "Detach a Patch". Same file on Silent Silk.
@@ -249,7 +249,7 @@ const robe = async () => {
         else data = {name: 'Fey Ancestry', type: 'feat', img: 'icons/magic/nature/leaf-glow-teal.webp',
             system: {type: {value: 'race'}, description: {value: '<p>You have Advantage on saving throws you make to avoid or end the Charmed condition.</p>'}},
             effects: [{name: 'Fey Ancestry', img: 'icons/magic/nature/leaf-glow-teal.webp', transfer: true,
-                system: {changes: [{key: 'flags.midi-qol.advantage.ability.save.all', type: 'custom', value: "'charmed' in (options?.statuses ?? []) || /charm/i.test(item?.name ?? '')", priority: 20}]}}]};
+                system: {changes: [{key: 'flags.midi-qol.advantage.save.all', type: 'custom', value: "'charmed' in (options?.statuses ?? []) || /charm/i.test(item?.name ?? '')", priority: 20}]}}]};
         await actor.createEmbeddedDocuments('Item', [data]);
         report.push('<li>Fey Ancestry: added' + (src ? ' (copied from ' + src.parent.name + '\'s, automation included)' : ' (Advantage on saves against being Charmed)') + '.</li>');
     }

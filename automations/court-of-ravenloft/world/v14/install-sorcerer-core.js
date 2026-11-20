@@ -53,6 +53,9 @@ const H = (function nixSorcerer14() {
         twinned: {id: 'twinnedSpellPrimed', name: 'twinned spell'}
     };
     const SIX = ['acid', 'cold', 'fire', 'lightning', 'poison', 'thunder'];
+    // 1.7.5: per-actor extra Transmuted types (Petra's homebrew necrotic), written by that actor's fixes installer as
+    // flags.nix-module.transmutedExtraTypes. Extra types are both offered as targets and changeable from.
+    const typesFor = a => [...new Set([...SIX, ...(a?.flags?.['nix-module']?.transmutedExtraTypes ?? [])])];
     const baseName = i => String(i?.name ?? '').toLowerCase().replace(/^metamagic\s*[:\-–]\s*/, '').trim();
     const keyOf = i => Object.keys(MM).find(k => MM[k].name === baseName(i));
     const points = a => a?.items?.find(i => i.type === 'feat'
@@ -180,7 +183,7 @@ const H = (function nixSorcerer14() {
     // Macro text: these helpers + the function, its result handed back to CAT
     // (save "bonus" passes return the new roll).
     const wrap = fn => 'const H = (' + nixSorcerer14.toString() + ')();\nreturn await (' + fn.toString() + ')();';
-    return {MM, SIX, baseName, keyOf, points, acts, getFx, owner, unset, castable, forcesSave, damageTypes, lasting, ranged, actionAct,
+    return {MM, SIX, typesFor, baseName, keyOf, points, acts, getFx, owner, unset, castable, forcesSave, damageTypes, lasting, ranged, actionAct,
         twinnable, costOf, chat, picked, makeEffect, refund, primeOnly, pick, distantApply, distantRestore, cast, entry, wrap};
 })();
 
@@ -538,13 +541,14 @@ const transmuted = async () => {
     const onDamage = async () => {
         if (workflow.item?.type !== 'spell') return;
         const rolls = workflow.damageRolls ?? [];
-        const hit = rolls.filter(r => H.SIX.includes(r.options?.type));
+        const TYPES = H.typesFor(workflow.actor);
+        const hit = rolls.filter(r => TYPES.includes(r.options?.type));
         if (!hit.length) return;                         // nothing to change: stay primed
         const primed = document;
         await documentUtils.deleteDocument(primed);
         const from = [...new Set(hit.map(r => r.options.type))];
         const label = t => CONFIG.DND5E.damageTypes?.[t]?.label ?? t;
-        const buttons = H.SIX.filter(t => !(from.length === 1 && from[0] === t)).map(t => [label(t), t]);
+        const buttons = TYPES.filter(t => !(from.length === 1 && from[0] === t)).map(t => [label(t), t]);
         buttons.push(['Keep ' + from.map(label).join(' / '), false]);
         const to = await dialogUtils.buttonDialog(primed.name,
             'Transmuted Spell: change the ' + from.map(label).join(' / ') + ' damage of ' + workflow.item.name + ' to:', buttons,
@@ -559,12 +563,14 @@ const transmuted = async () => {
     };
     await H.makeEffect(me, {
         name: title, img: workflow.item.img, origin: workflow.item.uuid, duration: {value: 60, units: 'seconds'},
-        description: 'The next spell dealing acid, cold, fire, lightning, poison or thunder damage can change it to another of those types.',
+        description: 'The next spell dealing ' + H.typesFor(me).join(', ') + ' damage can change it to another of those types.',
         flags: {cat: {embeddedMacros: [H.entry('Transmuted damage', 'roll', 'actorDamageRoll', 30, onDamage)]}}
     }, P);
     if (await H.primeOnly(me)) return;
-    const spells = H.castable(me).filter(s => [...H.damageTypes(s)].some(t => H.SIX.includes(t)));
-    if (!spells.length) return H.refund(me, workflow, P, 'no castable spells deal acid, cold, fire, lightning, poison or thunder damage.');
+    const TYPES = H.typesFor(me);
+    const typeNames = TYPES.length > 6 ? TYPES.join(', ') : 'acid, cold, fire, lightning, poison or thunder';
+    const spells = H.castable(me).filter(s => [...H.damageTypes(s)].some(t => TYPES.includes(t)));
+    if (!spells.length) return H.refund(me, workflow, P, 'no castable spells deal ' + typeNames + ' damage.');
     const spell = await H.pick(title, 'Transmute which spell? You choose the new damage type when it rolls damage.', spells);
     if (!spell) return H.refund(me, workflow, P, 'no spell chosen.');
     await H.cast(me, spell);
@@ -740,7 +746,8 @@ if (incarnateItem) {
 }
 
 // ---- 3. Innate Sorcery ------------------------------------------------------------
-const innate = actor.items.find(i => /^innate sorcery$/i.test(i.name.trim()));
+// Bangiras's is one item, "Mantle of Flame / Innate Sorcery" (1.7.5: he uses this core too).
+const innate = actor.items.find(i => /^innate sorcery$/i.test(i.name.trim())) ?? actor.items.find(i => i.type === 'feat' && /\/\s*innate sorcery\s*$/i.test(i.name.trim()));
 if (!innate) report.push('<li><b>Innate Sorcery</b> not found.</li>');
 else {
     const notes = [];
@@ -772,6 +779,26 @@ else {
         notes.push('"2 Sorcery Points" activity for when the uses are gone');
     }
     report.push('<li>Innate Sorcery: ' + (notes.length ? notes.join('; ') : 'already set') + '.</li>');
+}
+
+// ---- 3b. Self-only features target the caster (1.7.5, same as v13) -----------------
+// Range Self / target Self with no target confirmation on every activity of these features (Metamagic options only
+// when the activity applies an effect), so the effect lands on the sorcerer without targeting her own token.
+{
+    const SELF_ONLY = /^(innate sorcery|umbral form|sorcery incarnate|sorcerous restoration)\b|\/\s*innate sorcery\s*$/i;
+    const fixedSelf = [];
+    for (const it of actor.items.filter(i => SELF_ONLY.test(i.name.trim()) || /^metamagic:/i.test(i.name.trim()))) {
+        for (const a of H.acts(it)) {
+            const hasEffects = (a.effects?.length ?? a.effects?.size ?? 0) > 0;
+            if (!SELF_ONLY.test(it.name.trim()) && !hasEffects) continue;
+            if (a.range?.units === 'self' && a.target?.affects?.type === 'self' && a.midiProperties?.confirmTargets === 'never') continue;
+            await a.update({'range.units': 'self', 'range.value': '', 'range.override': true,
+                'target.affects.type': 'self', 'target.affects.count': '', 'target.affects.choice': false, 'target.template.type': '', 'target.override': true,
+                'midiProperties.confirmTargets': 'never'});
+            fixedSelf.push(it.name + (a.name && a.name !== it.name ? ' (' + a.name + ')' : ''));
+        }
+    }
+    if (fixedSelf.length) report.push('<li>Range / target Self, no target confirmation: ' + fixedSelf.join(', ') + '.</li>');
 }
 
 // ---- 4. Sorcerous Restoration ---------------------------------------------------

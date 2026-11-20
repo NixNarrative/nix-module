@@ -6,7 +6,7 @@ globalThis.foundry = {utils: {deepClone: clone, setProperty, expandObject}};
 const calls = [];
 const rec = name => (...a) => { calls.push([name, a]); return name.includes('Dialog') ? null : {ok: name}; };
 globalThis.cat = {utils: {
-  workflowUtils: {syntheticItemRoll: rec('syntheticItemRoll'), syntheticActivityDataRoll: rec('syntheticActivityDataRoll'), applyDamage: rec('applyDamage')},
+  workflowUtils: {syntheticItemRoll: rec('syntheticItemRoll'), syntheticActivityRoll: rec('syntheticActivityRoll'), syntheticActivityDataRoll: rec('syntheticActivityDataRoll'), applyDamage: rec('applyDamage')},
   tokenUtils: {getDistance: (a, b) => { calls.push(['getDistance', [a, b]]); return 10; }, findNearby: (t, r, o) => { calls.push(['findNearby', [t, r, o]]); return [{name: 'docB', object: {name: 'objB', document: {documentName: 'Token'}}}]; }},
   dialogUtils: {selectTargetDialog: async (t, c, list, o) => { calls.push(['selectTargetDialog', [list, o]]); return {result: list[0], skip: true}; }},
   queryUtils: {firstOwner: () => 'u1'}, actorUtils: {getFirstToken: () => ({object: 'placeableX'})}
@@ -32,8 +32,25 @@ assert.ok(u.isCatAdapter);
 await u.workflowUtils.syntheticItemRoll({name: 'it'}, [placeable], {consumeUsage: true});
 const [, [, targets, opts]] = calls.find(c => c[0] === 'syntheticItemRoll');
 assert.equal(targets[0], tokDoc, 'placeable -> TokenDocument');
-assert.deepEqual(opts, {consumeUsage: true, consumeResources: false, spellSlot: false, options: {workflowOptions: {targetConfirmation: 'none'}}},
-  '1.7.4: a roll at targets Nix Fix chose carries Midi\'s no-Target-Confirmation option');
+assert.deepEqual(opts, {consumeResources: false, spellSlot: false, options: {workflowOptions: {targetConfirmation: 'none'}}},
+  '1.7.4: a roll at targets Nix Fix chose carries Midi\'s no-Target-Confirmation option; 1.7.5: CAT 0.1.9 dropped consumeUsage, so it is not passed');
+calls.length = 0;
+await u.workflowUtils.syntheticActivityRoll({name: 'act'}, [placeable], {consumeUsage: true, consumeResources: true});
+assert.equal('consumeUsage' in calls[0][1][2], false, 'CAT: consumeUsage stripped');
+assert.equal(calls[0][1][2].consumeResources, true, 'CAT: consumeResources spends the uses');
+// 1.7.5: Midi 14.7 / dnd5e 6.1 damage item lists (calculatedDamages / damages), v13 names as fallback
+{
+  const v14 = {calculatedDamages: [{type: 'radiant', value: 7}, {type: 'necrotic', value: 0}], damages: [{type: 'necrotic', value: 12}, {type: 'radiant', value: 7}]};
+  const v13 = {damageDetail: [{type: 'radiant', value: 5}, {type: 'radiant', value: 3}], rawDamageDetail: [{type: 'necrotic', value: 9}]};
+  assert.equal(E.appliedDamages(v14), v14.calculatedDamages); assert.equal(E.rolledDamages(v14), v14.damages);
+  assert.equal(E.appliedDamages(v13), v13.damageDetail); assert.equal(E.rolledDamages(v13), v13.rawDamageDetail);
+  assert.deepEqual(E.appliedDamages({}), []); assert.deepEqual(E.rolledDamages(undefined), []);
+  assert.equal(E.damageOfType(E.appliedDamages(v14), 'radiant'), 7);
+  assert.equal(E.damageOfType(E.appliedDamages(v13), 'radiant'), 8);
+  assert.equal(E.damageOfType(E.rolledDamages(v14), 'necrotic'), 12);
+  assert.equal(E.damageOfType(E.rolledDamages(v13), 'necrotic'), 9);
+  assert.equal(E.damageOfType([{type: 'radiant', value: '4'}, {type: 'radiant'}], 'radiant'), 4, 'string / missing values');
+}
 // fixedTargets (1.7.4)
 assert.equal(E.NO_CONFIRM, 'none');
 assert.equal(E.fixedTargets([], {a: 1}).options, undefined, 'no targets: untouched');
@@ -104,3 +121,11 @@ u13.workflowUtils.bonusDamage('wf', '1d8');
 assert.deepEqual(v13calls.at(-1), ['bonusDamage', ['wf', '1d8']], 'other helpers pass straight through');
 assert.equal(E.fx(v13data), v13data, 'fx identity on v13');
 console.log('engine tests: all passed');
+// 1.7.5: creature type, Nix Fix's own setting first (Dhampir vampires are undead for the Court checks)
+{
+  // (this part of the file runs with the v13 mocks: no typeOrRace, so the sheet's type is the fallback)
+  assert.equal(E.creatureTypeOf({flags: {'nix-module': {creatureType: 'Undead'}}, system: {details: {type: {value: 'humanoid'}}}}), 'undead', 'own setting wins');
+  assert.equal(E.creatureTypeOf({system: {details: {type: {value: 'Fey'}}}}), 'fey', 'then the sheet');
+  assert.equal(E.creatureTypeOf(undefined), '');
+  console.log('creatureTypeOf: passed');
+}

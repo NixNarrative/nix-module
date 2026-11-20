@@ -17,19 +17,21 @@
 //    caster's next turn (GM confirms).
 //  Finger of Death: a Humanoid it kills rises as a Zombie under the caster's command.
 //  Sorcerous Burst: 8s on the d8s explode, up to the spellcasting modifier in extra d8s.
-//  Prismatic Wall: wall or globe, opaque (sight-blocking walls), bright/dim light.
+//  Prismatic Wall: wall or globe, see-through, bright/dim light.
 //    Creatures the caster designates (her side when cast) are unharmed. Others:
-//    Con save or Blinded 1 minute on coming within 20 ft or starting a turn there;
-//    passing through runs every intact layer in order (Dex save each): damage
-//    layers, Indigo restraint (3 successes / 3 failures -> Petrified), Violet
-//    blindness and plane shift. Ranged attacks and spells through the wall are
-//    stopped by the matching layer. "Destroy a layer / end" activity.
+//    Con save or Blinded 1 minute when it appears within 20 ft, on coming within 20 ft
+//    or starting a turn there; walking through runs every intact layer in order (Dex
+//    save each): damage layers, Indigo restraint (3 successes / 3 failures -> Petrified),
+//    Violet blindness and plane shift. Attacks (melee too, even out of reach) and spells
+//    aimed across the wall hit the outermost layer instead (AC 10; damage layers have HP
+//    20-60 worn down by their type), teleports stop at the wall and meet the outermost
+//    layer. The globe is 70 ft across, 10 ft less per fallen layer. "Destroy a layer / end".
 //  Turn and movement checks run on the active GM; the cast-time parts on the caster's client.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {isActiveGM} from './illrigger.mjs';
-import {gm} from './lieutenants.mjs';
-import {cpr, fxAll, HOOKS, isCat} from './engine.mjs';
+import {addGmHandler, gm} from './lieutenants.mjs';
+import {cpr, creatureTypeOf, fxAll, HOOKS, isCat} from './engine.mjs';
 
 export const FLAG = 'petraSpell';
 const WALL = 'petraWall';
@@ -43,7 +45,7 @@ const kindOf = item => cfgOf(item)?.kind ?? null;
 const actKind = act => act?.flags?.[MODULE_ID]?.[FLAG] ?? null;
 const inCombat = () => !!game.combat?.started;
 const turnKey = () => inCombat() ? game.combat.id + ':' + game.combat.round + ':' + game.combat.turn : 'none:' + Math.floor(Date.now() / 6000);
-const typeOf = actor => String(cpr()?.actorUtils?.typeOrRace?.(actor) ?? MidiQOL?.typeOrRace?.(actor) ?? actor?.system?.details?.type?.value ?? '').toLowerCase();
+const typeOf = actor => creatureTypeOf(actor);
 const chat = (actor, html) => ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: html});
 const gmWhisper = html => ChatMessage.create({whisper: ChatMessage.getWhisperRecipients('GM').map(u => u.id), content: html});
 const gmId = () => game.users.activeGM?.id ?? game.user.id;
@@ -186,9 +188,11 @@ const dcOf = (caster, item) => Number(item?.system?.activities?.find?.(a => a.sa
 async function onPreamble(wf) {
     try {
         if (!wf?.item) return;
+        restoreReach(wf.actor);
         const kind = kindOf(wf.item);
         if (kind === 'wallOfDeath' && actKind(wf.activity) === 'ring') return await ringTargets(wf);
         if (kind === 'negativeFlood') return await floodSplit(wf);
+        if (kind === 'vileBook' && actKind(wf.activity) === 'darkSpeech') return await darkSpeechTargets(wf);
         if (wf.targets?.size && walls('prism').length) return await prismBlock(wf);
     } catch (err) { console.error(TITLE + ' | Petra spells preamble', err); }
 }
@@ -211,43 +215,200 @@ async function floodSplit(wf) {
     await setTargets(wf, all.filter(t => !undead.includes(t)));
 }
 
-// Prismatic Wall: ranged attacks / spells across the wall.
-async function prismBlock(wf) {
-    const me = wf.token;
+// Book of Vile Darkness, Dark Speech (1.7.5): evil creatures and the reader herself aren't harmed.
+export const isEvil = actor => /(^|[^a-z])evil([^a-z]|$)/i.test(String(actor?.system?.details?.alignment ?? ''));
+async function darkSpeechTargets(wf) {
+    const all = Array.from(wf.targets ?? []);
+    const keep = all.filter(t => t.actor && t.actor.uuid !== wf.actor?.uuid && !isEvil(t.actor));
+    if (keep.length !== all.length) await setTargets(wf, keep);
+}
+// ...and she takes 1d12 psychic each time (no save).
+async function darkSpeechBacklash(wf) {
+    const me = wf.token ?? tokenOfActor(wf.actor);
     if (!me) return;
-    const isSpell = wf.item.type === 'spell';
-    const ranged = ['rangedWeaponAttack', 'rangedSpellAttack'].some(k => cpr()?.workflowUtils?.isAttackType?.(wf, k));
-    const magical = isSpell || !!wf.item.system?.properties?.has?.('mgc');
-    if (!isSpell && !ranged) return;
-    const from = me.center;
-    const stopped = [];
+    await hurt(wf.actor, [me], {name: 'Dark Speech (backlash)', img: wf.item.img, formula: '1d12', type: 'psychic', save: false});
+}
+
+// Prismatic Wall (1.7.5, Nix 2026-11-20): nothing reaches a creature behind the wall (or inside / outside the globe)
+// while any layer stands. An attack or spell by anyone not on Petra's side aimed across it loses those targets and
+// hits the outermost layer instead (auto-redirect, no dialog): attacks roll against AC 10, then the damage of the
+// roll (or the spell used) is checked against that layer's destroy condition after the roll (resolvePrismHits).
+// The wall the line crosses first (nearest the attacker) takes the hit; several targets behind it = one hit.
+// The Prismatic Wall between an attacker and a target (the one nearest the attacker), or null.
+function prismWallBetween(from, to, moverUuid) {
+    let best = null;
+    for (const tpl of walls('prism')) {
+        const st = wallState(tpl), s = geom(tpl);
+        if (st.allowed?.includes(moverUuid) || !(st.layers ?? []).length) continue;
+        if (!crosses(from, to, s)) continue;
+        const d = distTo(from, s);
+        if (!best || d < best.d) best = {tpl, d};
+    }
+    return best;
+}
+async function prismBlock(wf) {
+    const me = wf.token ?? tokenOfActor(wf.actor);
+    if (!me || wf.item?.flags?.[MODULE_ID]?.petraSynthetic) return;
+    const from = centerOf(me.document ?? me);
+    const hits = new Map();   // wall uuid -> target names
     const keep = Array.from(wf.targets).filter(t => {
-        if (t.id === me.id) return true;
-        for (const tpl of walls('prism')) {
-            const st = wallState(tpl);
-            if (!crosses(from, t.center, geom(tpl))) continue;
-            const layers = st.layers ?? [];
-            const by = isSpell && layers.includes('indigo') ? 'indigo (spells can\'t be cast through it)'
-                : ranged && !magical && layers.includes('red') ? 'red (nonmagical ranged attacks can\'t pass)'
-                    : ranged && magical && layers.includes('orange') ? 'orange (magical ranged attacks can\'t pass)' : null;
-            if (by) { stopped.push(esc(t.document.name) + ': ' + by); return false; }
-        }
-        return true;
+        const tdoc = t.document ?? t;
+        if (tdoc.id === (me.document ?? me).id) return true;
+        const best = prismWallBetween(from, centerOf(tdoc), (me.document ?? me).uuid);
+        if (!best) return true;
+        const list = hits.get(best.tpl.uuid) ?? [];
+        list.push(tdoc.name);
+        hits.set(best.tpl.uuid, list);
+        return false;
     });
-    if (!stopped.length) return;
+    if (!hits.size) return;
+    wf.nixPrismHits = Array.from(hits, ([tpl, names]) => ({tpl, names}));
     await setTargets(wf, keep);
-    await chat(wf.actor, '<b>Prismatic Wall</b> stops ' + esc(wf.item.name) + ':<br>' + stopped.join('<br>'));
+}
+
+// Melee at the wall (Nix 2026-11-20): a melee attack at a creature across the wall (inside the globe) goes ahead even
+// out of reach and hits the wall. Midi checks melee reach before our preamble (postChatCardChecks, v13 and 14.7),
+// after its preItemRoll hook, and adds flags.midi-qol.range.<mwak|msak> to the reach. So at preItemRoll the actor
+// gets, in memory only (never saved), exactly the extra feet those targets need; preamble (or 20 s) puts it back.
+export const MELEE_TYPES = ['mwak', 'msak'];
+export function reachNeeded(fromPx, targetsPx, pxPerFt) {
+    return Math.ceil(Math.max(0, ...targetsPx.map(p => Math.hypot(p.x - fromPx.x, p.y - fromPx.y) / pxPerFt)));
+}
+const reachSaved = new Map();   // actor uuid -> {key, had, prev, timer}
+function restoreReach(actor) {
+    const r = actor ? reachSaved.get(actor.uuid) : null;
+    if (!r) return;
+    reachSaved.delete(actor.uuid);
+    clearTimeout(r.timer);
+    const range = actor.flags?.['midi-qol']?.range;
+    if (!range) return;
+    if (r.had) range[r.key] = r.prev; else delete range[r.key];
+}
+function onPreItemRoll(data) {
+    try {
+        const wf = data?.workflow;
+        const act = wf?.activity, actor = wf?.actor;
+        if (!act?.attack || !MELEE_TYPES.includes(act.actionType) || !actor || !walls('prism').length) return;
+        const me = wf.token ?? tokenOfActor(actor);
+        if (!me) return;
+        const meDoc = me.document ?? me, from = centerOf(meDoc);
+        const pool = wf.targets?.size ? wf.targets : game.user?.targets;
+        const across = Array.from(pool ?? []).map(t => t.document ?? t)
+            .filter(td => td?.id !== meDoc.id && prismWallBetween(from, centerOf(td), meDoc.uuid)).map(centerOf);
+        const need = reachNeeded(from, across, pxft());
+        if (!need) return;
+        restoreReach(actor);
+        actor.flags['midi-qol'] ??= {};
+        const range = actor.flags['midi-qol'].range ??= {};
+        const key = act.actionType, had = key in range, prev = range[key];
+        range[key] = had && prev ? '(' + prev + ') + ' + need : String(need);
+        reachSaved.set(actor.uuid, {key, had, prev, timer: setTimeout(() => restoreReach(actor), 20000)});
+    } catch (err) { console.error(TITLE + ' | Prismatic Wall melee reach', err); }
+}
+
+// Globe size (Nix 2026-11-20): 70 ft across when cast, 10 ft less per fallen layer, 10 ft with only violet left:
+// radius = 5 ft per layer left. The straight wall keeps its placed length.
+export const globeRadiusFt = layersLeft => 5 * Math.max(1, Number(layersLeft) || 0);
+// Update data that sets a globe's radius: MeasuredTemplate `distance` (ft) or the Region's first shape (px).
+export function globeResize(doc, ft, pxPerFt) {
+    const shapes = doc?.toObject?.().shapes ?? (Array.isArray(doc?.shapes) ? doc.shapes : null);
+    if (!shapes) return {distance: ft};
+    return {shapes: shapes.map((sh, i) => {
+        if (i) return sh;
+        const out = {...sh};
+        if ('radiusX' in out || 'radiusY' in out) { out.radiusX = ft * pxPerFt; out.radiusY = ft * pxPerFt; }
+        else out.radius = ft * pxPerFt;
+        return out;
+    })};
+}
+async function sizeGlobe(tpl, layersLeft) {
+    try {
+        const data = globeResize(tpl, globeRadiusFt(layersLeft), pxft());
+        if (tpl.isOwner) await tpl.update(data); else await gm('update', {uuid: tpl.uuid, data});
+    } catch (err) { console.error(TITLE + ' | Prismatic Wall globe size', err); }
+}
+
+export const PRISM_AC = 10;
+// Nix 2026-11-20: a natural 1 misses, a critical always hits, otherwise total vs AC 10.
+export const prismAttackHits = ({total, critical, fumble}) => !fumble && (!!critical || Number(total) >= PRISM_AC);
+// Nix 2026-11-20: a damage layer has hit points (its threshold) that only its damage type wears down, hit after hit
+// (red 25 cold, ...). `taken` = that type's damage the layer already took. Other types do nothing. No carry-over:
+// the rest of a breaking hit doesn't reach the next layer. Indigo / violet: the spell breaks them.
+export function layerHit(key, {damage = {}, spell = '', taken = 0} = {}) {
+    const L = LAYERS.find(l => l.key === key);
+    if (!L) return {broken: false, dealt: 0, taken: 0, left: null};
+    if (L.breakSpell) return {broken: L.breakSpell.test(String(spell).trim()), dealt: 0, taken: 0, left: null};
+    const dealt = Math.max(0, Number(damage[L.breakType]) || 0);
+    const total = (Number(taken) || 0) + dealt;
+    return {broken: total >= L.breakMin, dealt, taken: Math.min(total, L.breakMin), left: Math.max(0, L.breakMin - total)};
+}
+export const layerBreaks = (key, opts) => layerHit(key, opts).broken;
+function damageByType(wf) {
+    const out = {};
+    for (const r of wf.damageRolls ?? []) {
+        const type = r.options?.type ?? r.options?.types?.[0];
+        if (type) out[type] = (out[type] ?? 0) + (Number(r.total) || 0);
+    }
+    return out;
+}
+async function resolvePrismHits(wf) {
+    const list = wf.nixPrismHits;
+    if (!list?.length) return;
+    wf.nixPrismHits = null;
+    const attack = !!(wf.activity?.attack || wf.attackRoll);
+    const roll = wf.attackRoll;
+    const hit = !attack || (!!roll && prismAttackHits({total: wf.attackTotal ?? roll.total, critical: wf.isCritical, fumble: wf.isFumble}));
+    const data = {damage: hit ? damageByType(wf) : {}, spell: wf.item?.type === 'spell' ? wf.item.name : '', hit, attack,
+        total: attack ? Number(wf.attackTotal ?? roll?.total ?? 0) : null, by: wf.actor?.name ?? '', what: wf.item?.name ?? ''};
+    for (const h of list) await gm('prismHit', {...data, tpl: h.tpl, names: h.names});
+}
+// Runs on the active GM (templates / Regions are the GM's), one hit at a time per wall so the damage adds up.
+const prismHitGM = data => serial('prism:' + data.tpl, () => prismHitNow(data));
+async function prismHitNow({tpl: uuid, names, damage, spell, hit, attack, total, by, what}) {
+    const tpl = fromUuidSync(uuid);
+    const st = wallState(tpl);
+    if (!tpl || !areaAlive(tpl) || !st?.layers?.length) return false;
+    const caster = casterOf(st);
+    const L = layer(st.layers[0]);
+    const head = '<b>' + esc(st.name) + '</b>: ' + esc(what) + ' (' + esc(by) + ') at ' + esc(names.join(', ')) + ' hits the ' + L.label.toLowerCase() + ' layer instead';
+    if (attack && !hit) return chat(caster, head + ', and misses it (' + total + ' vs AC ' + PRISM_AC + '). Nothing gets through.');
+    const dealt = Object.entries(damage ?? {}).filter(([, n]) => n > 0).map(([t, n]) => n + ' ' + t).join(', ');
+    const r = layerHit(L.key, {damage, spell, taken: st.taken?.[L.key] ?? 0});
+    if (!r.broken) {
+        const wear = r.left === null ? ' (only ' + L.ends + ' destroys it)'
+            : r.dealt ? ': ' + r.taken + ' / ' + L.breakMin + ' ' + L.breakType + ' damage taken, ' + r.left + ' left'
+                : ' (only ' + L.breakType + ' damage wears it down; ' + r.left + ' of ' + L.breakMin + ' left)';
+        if (r.dealt) await tpl.setFlag(MODULE_ID, WALL, {...st, taken: {...(st.taken ?? {}), [L.key]: r.taken}});
+        return chat(caster, head + (dealt ? ' (' + esc(dealt) + ')' : '') + '. The ' + L.label.toLowerCase() + ' layer holds' + wear + '. Nothing gets through.');
+    }
+    await chat(caster, head + (dealt ? ' (' + esc(dealt) + ')' : '') + ' and destroys it' + (r.left === null ? '' : ' (' + L.breakMin + ' ' + L.breakType + ' damage taken in all)') + '.');
+    return destroyOuter(tpl, caster);
+}
+// The outermost layer falls; the next one is outermost now (or the wall is gone).
+async function destroyOuter(tpl, actor) {
+    const st = wallState(tpl);
+    const next = layer(st.layers[0]);
+    const layers = st.layers.slice(1);
+    if (!layers.length) {
+        await chat(actor, '<b>' + esc(st.name) + '</b>: the last layer falls; the wall is gone.');
+        return tpl.delete({nixWallEnd: true});
+    }
+    await tpl.setFlag(MODULE_ID, WALL, {...st, layers});   // a fallen layer's `taken` entry is never read again
+    if (st.globe) await sizeGlobe(tpl, layers.length);
+    await chat(actor, '<b>' + esc(st.name) + '</b>: the ' + next.label.toLowerCase() + ' layer is destroyed. Left, outside in: ' + layers.map(k => layer(k).label).join(', ') + '.');
 }
 
 async function onRollFinished(wf) {
     try {
         if (!wf?.item || wf.item.flags?.[MODULE_ID]?.petraSynthetic) return;
+        if (wf.nixPrismHits?.length) await resolvePrismHits(wf);
         const kind = kindOf(wf.item);
         if (!kind) return;
         const ak = actKind(wf.activity);
         if (kind === 'wallOfDeath') return await castDeath(wf);
         if (kind === 'negativeFlood') return await castFlood(wf);
         if (kind === 'fingerOfDeath') return await markRise(wf, {humanoidOnly: true, controlled: true});
+        if (kind === 'vileBook' && ak === 'darkSpeech') return await darkSpeechBacklash(wf);
         if (kind === 'prismaticWall') return await (ak === 'layer' ? prismLayerMenu(wf) : castPrism(wf, ak === 'globe'));
     } catch (err) { console.error(TITLE + ' | Petra spells', err); }
 }
@@ -279,7 +440,8 @@ async function castDeath(wf) {
     const ability = [...(wf.activity?.save?.ability ?? [])][0] ?? cfg.ability ?? 'con';
     const dc = Number(wf.activity?.save?.dc?.value ?? dcOf(wf.actor, wf.item));
     await tpl.setFlag(MODULE_ID, WALL, {kind: 'death', caster: wf.actor.uuid, item: wf.item.uuid, name: wf.item.name, img: wf.item.img,
-        side, sideLabel: labels[String(side)], formula, type, ability, dc, tickSave: !!cfg.tickSave, reach: Number(cfg.reach ?? 10)});
+        side, sideLabel: labels[String(side)], formula, type, ability, dc, tickSave: !!cfg.tickSave, reach: Number(cfg.reach ?? 10), castAt: Date.now()});
+    deathAnimation(tpl);
     // Ends with concentration (and the template with this effect).
     const effId = await addEffect(wf.actor, {name: wf.item.name, img: wf.item.img, origin: wf.item.uuid, transfer: false,
         duration: {seconds: Number(cfg.seconds ?? 60)}, description: 'Wall of Death is up. Deleting this ends the wall.',
@@ -385,14 +547,17 @@ async function risePending(caster) {
 }
 
 // ---------------------------------------------------------------- Prismatic Wall
+// Destroy conditions, Nix's rulings 2026-11-20: each damage layer has HP (red 20, +10 per layer after it) that only
+// its damage type wears down, over any number of hits; orange thunder (RAW a strong wind), green lightning (RAW
+// Passwall). Indigo and violet have no HP: Daylight / Dispel Magic only.
 export const LAYERS = [
-    {key: 'red', label: 'Red', type: 'fire', ends: 'at least 25 cold damage', blocks: 'nonmagical ranged attacks'},
-    {key: 'orange', label: 'Orange', type: 'acid', ends: 'a strong wind (Gust of Wind)', blocks: 'magical ranged attacks'},
-    {key: 'yellow', label: 'Yellow', type: 'lightning', ends: 'at least 60 force damage'},
-    {key: 'green', label: 'Green', type: 'poison', ends: 'Passwall (or a spell of its level or higher that opens a portal)'},
-    {key: 'blue', label: 'Blue', type: 'cold', ends: 'at least 25 fire damage'},
-    {key: 'indigo', label: 'Indigo', ends: 'bright light from Daylight', blocks: 'spells'},
-    {key: 'violet', label: 'Violet', ends: 'Dispel Magic'}
+    {key: 'red', label: 'Red', type: 'fire', ends: '20 cold damage', breakType: 'cold', breakMin: 20},
+    {key: 'orange', label: 'Orange', type: 'acid', ends: '30 thunder damage', breakType: 'thunder', breakMin: 30},
+    {key: 'yellow', label: 'Yellow', type: 'lightning', ends: '40 force damage', breakType: 'force', breakMin: 40},
+    {key: 'green', label: 'Green', type: 'poison', ends: '50 lightning damage', breakType: 'lightning', breakMin: 50},
+    {key: 'blue', label: 'Blue', type: 'cold', ends: '60 fire damage', breakType: 'fire', breakMin: 60},
+    {key: 'indigo', label: 'Indigo', ends: 'bright light from Daylight', breakSpell: /^daylight$/i},
+    {key: 'violet', label: 'Violet', ends: 'Dispel Magic', breakSpell: /^dispel magic$/i}
 ];
 const layer = k => LAYERS.find(l => l.key === k);
 
@@ -400,12 +565,15 @@ async function castPrism(wf, globe) {
     const tpl = await templateOf(wf);
     if (!tpl) return gmWhisper('<b>Prismatic Wall</b>: no ' + (isCat() ? 'area (Region)' : 'template') + ' was placed, so the wall isn\'t tracked.');
     const cfg = cfgOf(wf.item);
+    if (globe) await sizeGlobe(tpl, LAYERS.length);   // 35 ft radius (70 ft across), wherever it was centred
     const s = geom(tpl);
     const me = wf.token ?? tokenOfActor(wf.actor);
     const disp = me?.document.disposition;
     const allowed = canvas.tokens.placeables.filter(t => t?.actor && (t.id === me?.id || (disp !== undefined && t.document.disposition === disp))).map(t => t.document.uuid);
     const W = CONST.WALL_SENSE_TYPES, M = CONST.WALL_MOVEMENT_TYPES;
-    const wall = c => ({c, move: M.NONE, sight: W.NORMAL, light: W.NONE, sound: W.NONE, flags: {[MODULE_ID]: {petraWall: tpl.id}}});
+    // 1.7.5 (Nix 2026-11-16): the wall doesn't hide what's behind it (only a failed glare save blinds). The Foundry walls
+    // blocked sight and nothing else, so none are placed any more; the crossing / layer rules are ours.
+    const wall = c => ({c, move: M.NONE, sight: W.NONE, light: W.NONE, sound: W.NONE, flags: {[MODULE_ID]: {petraWall: tpl.id}}});
     const segs = [];
     if (s.type === 'line') segs.push(wall([s.a.x, s.a.y, s.b.x, s.b.y].map(Math.round)));
     else for (let i = 0; i < 24; i++) {
@@ -413,7 +581,7 @@ async function castPrism(wf, globe) {
         segs.push(wall([s.c.x + Math.cos(a0) * s.r, s.c.y + Math.sin(a0) * s.r, s.c.x + Math.cos(a1) * s.r, s.c.y + Math.sin(a1) * s.r].map(Math.round)));
     }
     const scene = tpl.parent;
-    const made = await scene.createEmbeddedDocuments('Wall', segs);
+    const made = [];   // see above: no sight-blocking Foundry walls (segs kept for a movement-blocking option later)
     const mid = midpoint(s);
     const anim = CONFIG.Canvas?.lightAnimations?.rainbowswirl ? 'rainbowswirl' : (CONFIG.Canvas?.lightAnimations?.swirl ? 'swirl' : null);
     const [light] = await scene.createEmbeddedDocuments('AmbientLight', [{x: Math.round(mid.x), y: Math.round(mid.y),
@@ -425,6 +593,10 @@ async function castPrism(wf, globe) {
         wallIds: made.map(w => w.id), lightId: light?.id ?? null});
     await addEffect(wf.actor, {name: wf.item.name, img: wf.item.img, origin: wf.item.uuid, transfer: false, duration: {seconds: Number(cfg.seconds ?? 600)},
         description: 'Prismatic Wall is up. Deleting this ends the wall.', flags: {[MODULE_ID]: {petraWallTemplate: tpl.uuid}}});
+    // 1.7.5: glare for everyone not on her side who is already within 20 ft when the wall appears (Con save or Blinded
+    // 1 minute); stepping into 20 ft later is still handled on movement.
+    const fresh = areaAlive(tpl) ? tpl : null;
+    if (fresh) for (const t of glareTargets(canvas.tokens.placeables, s, allowed)) await prismGlare(fresh, t.document);
     await chat(wf.actor, '<b>' + esc(wf.item.name) + '</b> (' + (globe ? 'globe' : 'wall') + '): seven layers, ' + (cfg.dice ?? 12) + 'd6 per damage layer, DC '
         + dcOf(wf.actor, wf.item) + '. Unharmed: ' + allowed.map(u => esc(fromUuidSync(u)?.name)).filter(Boolean).join(', ') + '.'
         + (inside.length ? '<br><b>GM:</b> the wall is in ' + inside.map(t => esc(t.document.name)).join(', ') + '\'s space; RAW the spell ends without effect.' : ''));
@@ -439,17 +611,13 @@ async function prismLayerMenu(wf) {
     const buttons = [];
     if (next) buttons.push(['Destroy the ' + next.label + ' layer (' + next.ends + ')', 'destroy']);
     buttons.push(['End the wall', 'end'], ['Cancel', false]);
+    const worn = next?.breakMin ? '<br>The ' + next.label.toLowerCase() + ' layer has taken ' + (st.taken?.[next.key] ?? 0) + ' / ' + next.breakMin + ' ' + next.breakType + ' damage.' : '';
     const pick = await cpr()?.dialogUtils?.buttonDialog?.(wf.item.name, 'Layers left, outside in: <b>' + st.layers.map(k => layer(k).label).join(', ')
-        + '</b>.<br>Layers fall one at a time, red first. (Dispel Magic can only end the violet layer, once it is the last.)', buttons, {userId: gmId()});
-    if (pick === 'end') return tpl.delete();
+        + '</b>.' + worn + '<br>Layers fall one at a time, red first. (Dispel Magic can only end the violet layer, once it is the last.)', buttons, {userId: gmId()});
+    if (pick === 'end') return tpl.delete({nixWallEnd: true});
     if (pick !== 'destroy') return;
-    const layers = st.layers.slice(1);
-    if (!layers.length) {
-        await chat(wf.actor, '<b>' + esc(st.name) + '</b>: the last layer falls; the wall is gone.');
-        return tpl.delete();
-    }
-    await tpl.setFlag(MODULE_ID, WALL, {...st, layers});
-    await chat(wf.actor, '<b>' + esc(st.name) + '</b>: the ' + next.label.toLowerCase() + ' layer is destroyed. Left: ' + layers.map(k => layer(k).label).join(', ') + '.');
+    if (isActiveGM()) return destroyOuter(tpl, wf.actor);
+    await gm('prismDestroy', {tpl: tpl.uuid});
 }
 
 // A creature goes through the wall: every intact layer, in order.
@@ -461,11 +629,19 @@ async function prismPass(tpl, doc) {
     await chat(caster, '<b>' + esc(st.name) + '</b>: ' + esc(doc.name) + ' passes through ' + st.layers.length + ' layer' + (st.layers.length === 1 ? '' : 's') + '.');
     for (const k of st.layers) {
         if (!doc.actor || !canvas.scene.tokens.get(doc.id)) return;
+        await prismLayerEffect(st, caster, doc, k);
+    }
+}
+// One layer's effect on a creature (Dex save): damage, or Indigo / Violet on a failure.
+async function prismLayerEffect(st, caster, doc, k) {
+    const tok = doc.object;
+    if (!tok) return;
+    {
         const L = layer(k);
         const name = st.name + ': ' + L.label;
-        if (L.type) { await hurt(caster, [tok], {name, img: st.img, formula: st.dice + 'd6', type: L.type, ability: 'dex', dc: st.dc}); continue; }
+        if (L.type) return hurt(caster, [tok], {name, img: st.img, formula: st.dice + 'd6', type: L.type, ability: 'dex', dc: st.dc});
         const failed = await hurt(caster, [tok], {name, img: st.img, ability: 'dex', dc: st.dc, onSave: 'none'});
-        if (!failed.has(doc.id)) continue;
+        if (!failed.has(doc.id)) return;
         if (k === 'indigo') {
             await addEffect(doc.actor, {name: 'Prismatic Wall: Indigo', img: st.img, origin: st.item, transfer: false, statuses: ['restrained'],
                 description: 'Restrained. Con save at the end of each of its turns: 3 successes end it, 3 failures turn it to stone (Petrified until freed by Greater Restoration or similar).',
@@ -489,6 +665,11 @@ async function prismGlare(tpl, doc) {
         duration: {seconds: 60}, description: 'Blinded by the wall\'s glare for 1 minute.', flags: {[MODULE_ID]: {prismGlare: tpl.uuid}}});
 }
 const near20 = (p, doc, s) => distTo(p, s) <= radiusOf(doc) + 20 * pxft();
+// Creatures that make the glare save when the wall appears: within 20 ft, not designated, not already blinded.
+function glareTargets(tokens, s, allowed) {
+    return tokens.filter(t => t?.actor && !allowed.includes(t.document.uuid) && alive(t.document) && !blindedNow(t.actor)
+        && near20(centerOf(t.document), t.document, s));
+}
 
 // ---------------------------------------------------------------- Sorcerous Burst (2024)
 // Each d8 that shows an 8 adds another d8 (which can explode too), up to the spellcasting
@@ -574,12 +755,110 @@ function onUpdateToken(doc, changed) {
     });
 }
 
+// ---------------------------------------------------------------- Prismatic Wall: teleports (1.7.5, Nix 2026-11-16)
+// A teleport (Misty Step, Dimension Door, Chris's Premades' teleports, a GM "blink" / "displace" move) whose straight
+// path crosses the wall, or goes into / out of the globe, is stopped on the mover's side of the wall and the creature
+// takes the outermost layer's effect (as for passing that layer). Walking through still runs every layer (RAW).
+// Chris's Premades 1 teleports with {isPaste: true}; CAT 0.1.9 moves with the "displace" action; Foundry marks
+// teleport actions with CONFIG.Token.movement.actions[action].teleport.
+export function isTeleportMove(options, id, actions = globalThis.CONFIG?.Token?.movement?.actions ?? {}) {
+    if (options?.isPaste || options?.teleport) return true;
+    const mv = options?.movement?.[id];
+    const wps = mv?.waypoints ?? mv?.pending?.waypoints ?? [];
+    return wps.some(w => actions?.[w?.action]?.teleport === true || w?.action === 'displace' || w?.action === 'blink');
+}
+// The point on from -> to just before it crosses the wall, backed off `back` px toward `from` (null if it doesn't cross).
+export function stopShort(from, to, s, back) {
+    if (!crosses(from, to, s)) return null;
+    let lo = 0, hi = 1;
+    const at = u => ({x: from.x + (to.x - from.x) * u, y: from.y + (to.y - from.y) * u});
+    for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (crosses(from, at(m), s)) hi = m; else lo = m; }
+    const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+    return at(Math.max(0, lo - back / len));
+}
+function onPreUpdateToken(doc, changed, options) {
+    try {
+        if (!('x' in changed || 'y' in changed) || options?.nixPrismStop || doc.parent?.id !== canvas.scene?.id || !doc.actor) return;
+        if (!isTeleportMove(options, doc.id)) return;
+        const from = centerOf(doc);
+        const to = centerOf({x: changed.x ?? doc.x, y: changed.y ?? doc.y, width: doc.width, height: doc.height});
+        let best = null;
+        for (const tpl of walls('prism')) {
+            const st = wallState(tpl), s = geom(tpl);
+            if (st.allowed?.includes(doc.uuid) || !(st.layers ?? []).length) continue;
+            const stop = stopShort(from, to, s, radiusOf(doc) + 2);
+            if (stop && (!best || distTo(from, s) < best.d)) best = {tpl, stop, d: distTo(from, s)};
+        }
+        if (!best) return;
+        const half = {x: (doc.width ?? 1) * canvas.dimensions.size / 2, y: (doc.height ?? 1) * canvas.dimensions.size / 2};
+        const xy = {x: Math.round(best.stop.x - half.x), y: Math.round(best.stop.y - half.y)};
+        const tplUuid = best.tpl.uuid;
+        setTimeout(async () => {
+            try {
+                await doc.update(xy, {nixPrismStop: tplUuid, animate: false});
+                await gm('prismOuter', {tpl: tplUuid, token: doc.uuid});
+            } catch (err) { console.error(TITLE + ' | Prismatic Wall teleport', err); }
+        }, 0);
+        return false;
+    } catch (err) { console.error(TITLE + ' | Prismatic Wall teleport', err); }
+}
+async function prismOuterGM({tpl: uuid, token}) {
+    const tpl = fromUuidSync(uuid), doc = fromUuidSync(token);
+    const st = wallState(tpl);
+    const caster = casterOf(st);
+    if (!tpl || !doc?.actor || !caster || !st?.layers?.length) return false;
+    const L = layer(st.layers[0]);
+    await chat(caster, '<b>' + esc(st.name) + '</b>: ' + esc(doc.name) + ' tries to teleport through the wall, is stopped at it and meets the '
+        + L.label.toLowerCase() + ' layer.');
+    await prismLayerEffect(st, caster, doc, L.key);
+    return true;
+}
+
 async function deathTick(tpl, doc, why) {
     const st = wallState(tpl);
     const caster = casterOf(st);
     if (!caster || !doc.object || !alive(doc)) return;
+    const hpOf = () => { const hp = doc.actor?.system?.attributes?.hp ?? {}; return (Number(hp.value) || 0) + (Number(hp.temp) || 0); };
+    const before = hpOf();
     await hurt(caster, [doc.object], {name: st.name + (why === 'enters' ? ' (enters the wall)' : ' (ends its turn)'), img: st.img,
         formula: st.formula, type: st.type, ability: st.ability, dc: st.dc, save: !!st.tickSave});
+    await deathReaction(caster, st, doc, Math.max(0, before - hpOf()));
+}
+
+// 1.7.5: "whenever a creature takes damage from the wall, the caster can use her reaction to gain temporary hit points
+// equal to the damage dealt". Asked only while her reaction is free (once per round in combat); temp HP don't stack.
+export function deathReactionAllowed({dealt, inCombat, reactionUsed, incapacitated}) {
+    return dealt > 0 && !incapacitated && !(inCombat && reactionUsed);
+}
+async function deathReaction(caster, st, doc, dealt) {
+    const u = cpr();
+    const inCombatNow = inCombat();
+    const ok = deathReactionAllowed({dealt, inCombat: inCombatNow, reactionUsed: !!u?.actorUtils?.hasUsedReaction?.(caster),
+        incapacitated: !!globalThis.MidiQOL?.checkIncapacitated?.(caster)});
+    if (!ok) return;
+    const cur = Number(caster.system.attributes?.hp?.temp) || 0;
+    const userId = u?.socketUtils?.firstOwner?.(caster, true) ?? u?.queryUtils?.firstOwner?.(caster, true) ?? gmId();
+    const yes = await u?.dialogUtils?.confirm?.(st.name, esc(doc.name) + ' took ' + dealt + ' damage from the wall. Use your reaction to gain '
+        + dealt + ' temporary hit points' + (cur ? ' (you have ' + cur + '; they do not stack, the higher stays)' : '') + '?', {userId});
+    if (!yes) return;
+    if (inCombatNow) await u?.actorUtils?.setReactionUsed?.(caster);
+    if (dealt > cur) await gm('update', {uuid: caster.uuid, data: {'system.attributes.hp.temp': dealt}});
+    await chat(caster, '<b>' + esc(st.name) + '</b>: ' + esc(caster.name) + ' drinks the death the wall deals and gains ' + dealt + ' temporary hit points'
+        + (dealt > cur ? '.' : ' (kept her ' + cur + ').'));
+}
+
+// 1.7.5: green fire ring on the wall for as long as it lasts (Sequencer, persistent, named after the area).
+const DEATH_RING = 'modules/jb2a_patreon/Library/Generic/Fire/FireRing_01_Circle_Green_500.webp';
+const ringName = tpl => 'Petra Wall ' + tpl.id;
+function deathAnimation(tpl) {
+    try {
+        if (!globalThis.Sequence || !globalThis.Sequencer) return;
+        const s = geom(tpl);
+        const seq = new Sequence();
+        if (s.type === 'circle') seq.effect().file(DEATH_RING).atLocation(s.c).size(s.r * 2).persist().name(ringName(tpl)).belowTokens().fadeIn(500).fadeOut(500);
+        else seq.effect().file(DEATH_RING).atLocation(s.a).stretchTo(s.b).persist().name(ringName(tpl)).belowTokens().fadeIn(500).fadeOut(500);
+        seq.play();
+    } catch (err) { console.warn(TITLE + ' | Wall of Death animation', err); }
 }
 
 async function onUpdateCombat(combat, changed) {
@@ -649,6 +928,7 @@ async function onDeleteTemplate(tpl) {
     const st = wallState(tpl);
     if (!st) return;
     entered.delete(tpl.id);
+    try { if (globalThis.Sequencer) await Sequencer.EffectManager.endEffects({name: ringName(tpl)}); } catch { /* none playing */ }
     const scene = tpl.parent;
     const wallIds = scene.walls.filter(w => w.flags?.[MODULE_ID]?.petraWall === tpl.id).map(w => w.id);
     if (wallIds.length) await scene.deleteEmbeddedDocuments('Wall', wallIds).catch(() => {});
@@ -664,21 +944,44 @@ async function onDeleteEffect(effect) {
     const uuid = effect.flags?.[MODULE_ID]?.petraWallTemplate;
     if (!uuid) return;
     const tpl = fromUuidSync(uuid);
-    if (tpl && areaAlive(tpl)) await tpl.delete().catch(() => {});
+    if (tpl && areaAlive(tpl)) await tpl.delete({nixWallEnd: true}).catch(() => {});
+}
+
+// 1.7.5: Midi deletes an "instantaneous" activity's template a few seconds after the cast when its "auto remove
+// instantaneous templates" setting is on (Workflow.ts, v13), and Wall of Death's save activities may be instantaneous
+// while the spell is concentration: the wall vanished and dealt no ticks. A wall's area stays while its effect on the
+// caster is up; it ends with that effect (concentration) or a deliberate delete within a few seconds of casting.
+export function keepWallArea({state, ageMs, effectUp, ours}) {
+    return !!state && !ours && effectUp && ageMs < 15000;
+}
+function onPreDeleteArea(tpl, options) {
+    const st = wallState(tpl);
+    const caster = st ? casterOf(st) : null;
+    const effectUp = !!caster?.effects?.some?.(e => e.flags?.[MODULE_ID]?.petraWallTemplate === tpl.uuid);
+    if (!keepWallArea({state: st, ageMs: Date.now() - Number(st?.castAt ?? 0), effectUp, ours: !!options?.nixWallEnd})) return;
+    console.log(TITLE + ' | ' + (st.name ?? 'wall') + ': kept its area (removed right after the cast while the spell is still up).');
+    return false;
 }
 
 export function registerPetraSpells() {
     Hooks.on(HOOKS.preambleComplete, onPreamble);
+    Hooks.on('midi-qol.preItemRollV2', onPreItemRoll);
     Hooks.on(HOOKS.rollFinished, onRollFinished);
     Hooks.on(HOOKS.damageRollComplete, onDamageRolled);
     Hooks.on('canvasReady', onCanvasReady);
     Hooks.on('createToken', doc => { if (doc.parent?.id === canvas.scene?.id) lastPos.set(doc.id, centerOf(doc)); });
+    Hooks.on('preUpdateToken', onPreUpdateToken);
     Hooks.on('updateToken', onUpdateToken);
+    addGmHandler('prismHit', prismHitGM);
+    addGmHandler('prismOuter', prismOuterGM);
+    addGmHandler('prismDestroy', async ({tpl}) => { const t = fromUuidSync(tpl); const st = wallState(t); if (!t || !st?.layers?.length) return false; await destroyOuter(t, casterOf(st)); return true; });
     Hooks.on('updateCombat', onUpdateCombat);
     Hooks.on('deleteMeasuredTemplate', onDeleteTemplate);
     Hooks.on('deleteRegion', onDeleteTemplate);
     Hooks.on('dnd5e.postCreateMeasuredTemplate', onRegionsPlaced);
     Hooks.on('deleteActiveEffect', onDeleteEffect);
+    Hooks.on('preDeleteMeasuredTemplate', onPreDeleteArea);
+    Hooks.on('preDeleteRegion', onPreDeleteArea);
     if (canvas?.ready) onCanvasReady();
-    return {LAYERS, burstPlan, shapeOf, regionShape, distTo, sideOf, crosses, sideLabels, inDeathZone, risePending, zombieActor, cpr2Owns};
+    return {LAYERS, PRISM_AC, prismAttackHits, layerHit, layerBreaks, reachNeeded, globeRadiusFt, globeResize, isTeleportMove, stopShort, isEvil, deathReactionAllowed, keepWallArea, burstPlan, shapeOf, regionShape, distTo, sideOf, crosses, sideLabels, inDeathZone, risePending, zombieActor, cpr2Owns};
 }

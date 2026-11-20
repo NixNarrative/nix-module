@@ -82,7 +82,7 @@ async function vengefulBlade(actor, spell, target) {
     if (!w) return;
     const [hit, trigger] = vbDice(cantripLevel(actor));
     vbPending.set(actor.uuid, {weaponId: w.id, target: tokUuid(target), hit, trigger, spell: spell?.uuid ?? null, img: spell?.img, expires: Date.now() + 120000});
-    try { await cpr().workflowUtils.syntheticItemRoll(w, [target], {consumeUsage: false, consumeResources: false}); }
+    try { await cpr().workflowUtils.syntheticItemRoll(w, [target], {consumeResources: false}); }
     finally { setTimeout(() => vbPending.delete(actor.uuid), 1500); }
 }
 const vbFor = wf => {
@@ -190,7 +190,7 @@ async function lashEnd(actor) {
             }
         }
         if (dis) await gm('effect', {actor: actor.uuid, data: {name: 'Hell\'s Lash: disadvantage', img: LASH_IMG, transfer: false, duration: {rounds: 1},
-            changes: [{key: 'flags.midi-qol.disadvantage.ability.save.con', mode: MODES.OVERRIDE, value: '1', priority: 20}], flags: {dae: {specialDuration: ['isSave']}, [MODULE_ID]: {transient: true}}}});
+            changes: [{key: 'flags.midi-qol.disadvantage.save.con', mode: MODES.OVERRIDE, value: '1', priority: 20}], flags: {dae: {specialDuration: ['isSave']}, [MODULE_ID]: {transient: true}}}});
         const failed = await rollSave(owner, [tok], 'con', L.dc, 'Hell\'s Lash: end the tether', e.img ?? LASH_IMG);
         if (!failed.has(tokUuid(tok))) await endLash(e, 'breaks free');
     }

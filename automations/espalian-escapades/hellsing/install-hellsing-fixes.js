@@ -95,8 +95,8 @@ const ID = 'nixBloatedAgony';
 const old = effectUtils.getEffectByIdentifier(target.actor, ID);
 if (old) await genericUtils.remove(old);
 const changes = [
-    {key: 'flags.midi-qol.disadvantage.ability.check.str', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1', priority: 20},
-    {key: 'flags.midi-qol.disadvantage.ability.check.dex', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1', priority: 20}];
+    {key: 'flags.midi-qol.disadvantage.check.str', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1', priority: 20},
+    {key: 'flags.midi-qol.disadvantage.check.dex', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1', priority: 20}];
 if (amp) changes.push({key: 'flags.midi-qol.OverTime', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM,
     value: 'turn=end, saveAbility=con, saveDC=' + dc + ', label=Bloated Agony', priority: 20});
 await effectUtils.createEffect(target.actor, {
@@ -149,8 +149,8 @@ const might = lvl >= 18 ? 3 : lvl >= 11 ? 2 : 1;
 const heavy = actor.items.some(i => i.type === 'equipment' && i.system.equipped && i.system.type?.value === 'heavy');
 const M = CONST.ACTIVE_EFFECT_MODES;
 const changes = [
-    {key: 'flags.midi-qol.advantage.ability.check.str', mode: M.CUSTOM, value: '1', priority: 20},
-    {key: 'flags.midi-qol.advantage.ability.save.str', mode: M.CUSTOM, value: '1', priority: 20},
+    {key: 'flags.midi-qol.advantage.check.str', mode: M.CUSTOM, value: '1', priority: 20},
+    {key: 'flags.midi-qol.advantage.save.str', mode: M.CUSTOM, value: '1', priority: 20},
     {key: 'system.bonuses.mwak.damage', mode: M.ADD, value: '+' + might, priority: 20},
     {key: 'system.traits.dr.value', mode: M.ADD, value: 'bludgeoning', priority: 20},
     {key: 'system.traits.dr.value', mode: M.ADD, value: 'piercing', priority: 20},

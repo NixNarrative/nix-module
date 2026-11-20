@@ -157,8 +157,8 @@ const curseCast = async () => {
     const old = actorUtils.getEffectByIdentifier(target.actor, ID);
     if (old) await documentUtils.deleteDocument(old);
     const changes = [
-        {key: 'flags.midi-qol.disadvantage.ability.check.str', type: 'custom', value: '1', priority: 20},
-        {key: 'flags.midi-qol.disadvantage.ability.check.dex', type: 'custom', value: '1', priority: 20}];
+        {key: 'flags.midi-qol.disadvantage.check.str', type: 'custom', value: '1', priority: 20},
+        {key: 'flags.midi-qol.disadvantage.check.dex', type: 'custom', value: '1', priority: 20}];
     if (amp) changes.push({key: 'flags.midi-qol.OverTime', type: 'custom', value: 'turn=end, saveAbility=con, saveDC=' + dc + ', label=Bloated Agony', priority: 20});
     await effectUtils.createEffects(target.actor, [{
         name: 'Blood Curse of Bloated Agony', img: item.img, origin: item.uuid,
@@ -193,7 +193,7 @@ const agonyAttack = async () => {
     const data = {name: 'Bloated Agony', type: 'feat', img: eff.img, system: {activities: {nixAgonyDmg00001: {
         _id: 'nixAgonyDmg00001', type: 'damage', name: 'Bloated Agony', activation: {type: 'special'},
         damage: {parts: [{number: 1, denomination: 8, bonus: '', types: ['necrotic'], custom: {enabled: false}, scaling: {}}]}}}}};
-    await workflowUtils.syntheticItemDataRoll(data, src, [tok], {options: {workflowOptions: {targetConfirmation: 'none'}}});
+    await workflowUtils.syntheticItemDataRoll(data, src, [tok.document ?? tok], {options: {workflowOptions: {targetConfirmation: 'none'}}});
     await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: me}), content: '<b>Bloated Agony:</b> ' + tok.document.name + ' attacked twice this turn and its swollen body tears (1d8 necrotic).'});
 };
 
@@ -211,8 +211,8 @@ const hybridTransform = async () => {
     const might = lvl >= 18 ? 3 : lvl >= 11 ? 2 : 1;
     const heavy = me.items.some(i => i.type === 'equipment' && i.system.equipped && i.system.type?.value === 'heavy');
     const changes = [
-        {key: 'flags.midi-qol.advantage.ability.check.str', type: 'custom', value: '1', priority: 20},
-        {key: 'flags.midi-qol.advantage.ability.save.str', type: 'custom', value: '1', priority: 20},
+        {key: 'flags.midi-qol.advantage.check.str', type: 'custom', value: '1', priority: 20},
+        {key: 'flags.midi-qol.advantage.save.str', type: 'custom', value: '1', priority: 20},
         {key: 'system.bonuses.mwak.damage', type: 'add', value: '+' + might, priority: 20},
         {key: 'system.traits.dr.value', type: 'add', value: 'bludgeoning', priority: 20},
         {key: 'system.traits.dr.value', type: 'add', value: 'piercing', priority: 20},

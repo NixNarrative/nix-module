@@ -230,7 +230,7 @@ const gwmHew = async () => {
     if (!target) return;
     if (inCombat) await MidiQOL.setBonusActionUsed(me);
     const activity = workflow.activity;
-    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target], {options: {workflowOptions: {targetConfirmation: 'none', nixHew: true}}}), 400);
+    setTimeout(() => workflowUtils.syntheticActivityRoll(activity, [target.document ?? target], {options: {workflowOptions: {targetConfirmation: 'none', nixHew: true}}}), 400);
 };
  
 // ---- Mage Slayer (Guarded Mind): save / actorBonus / 300 --------------------------------------

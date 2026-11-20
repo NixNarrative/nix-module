@@ -54,7 +54,7 @@ async function pickWeapon(actor, title) {
 async function featureAttack(actor, source, targets, title) {
     const w = await pickWeapon(actor, title ?? source.name);
     if (!w) return;
-    return U().workflowUtils.specialItemUse(w, Array.from(targets).map(toDoc), source, {consumeUsage: true, consumeResources: true});
+    return U().workflowUtils.specialItemUse(w, Array.from(targets).map(toDoc), source, {consumeResources: true});
 }
 // Offer one of the boons a seal placement or move allows. Returns the chosen item or null.
 async function offerBoons(actor, target, {bonus = true} = {}) {
@@ -77,8 +77,8 @@ async function offerBoons(actor, target, {bonus = true} = {}) {
         ?? it.system.activities.find(x => x.name && it.name.toLowerCase().includes(x.name.toLowerCase().replace(/\s*\(passive\)$/, '')))
         ?? it.system.activities.contents[0];
     const targets = target ? [toDoc(target)] : [];
-    if (act) await U().workflowUtils.syntheticActivityRoll(act, targets, roll(targets, {consumeUsage: true, consumeResources: true, spellSlot: false}));
-    else await U().workflowUtils.syntheticItemRoll(it, targets, roll(targets, {consumeUsage: true, consumeResources: true, spellSlot: false}));
+    if (act) await U().workflowUtils.syntheticActivityRoll(act, targets, roll(targets, {consumeResources: true, spellSlot: false}));
+    else await U().workflowUtils.syntheticItemRoll(it, targets, roll(targets, {consumeResources: true, spellSlot: false}));
     return it;
 }
 
@@ -338,7 +338,7 @@ async function infernalMajestyDeath(actor) {
     if (!await U().dialogUtils.confirm(item.name, actor.name + ' drops to 0 HP in Infernal Majesty. Use its death burst?', {userId: firstOwner(actor)})) return;
     const act = item.system.activities.find(a => a.identifier === 'death' || /death|explo|burst/i.test(a.name ?? ''))
         ?? item.system.activities.find(a => a.activation?.type !== 'bonus' && a.id !== item.system.activities.contents[0]?.id);
-    if (act) await U().workflowUtils.syntheticActivityRoll(act, [], {consumeUsage: false, consumeResources: false, spellSlot: false});
+    if (act) await U().workflowUtils.syntheticActivityRoll(act, [], {consumeResources: false, spellSlot: false});
     const tok = tokenOf(actor);
     if (tok) await U().documentUtils.update(tok.document, {hidden: true});
 }
@@ -367,7 +367,7 @@ async function vengefulShot({workflow}) {
         w = actor.items.get(id);
         if (!w) return;
     }
-    return U().workflowUtils.specialItemUse(w, Array.from(workflow.targets).map(toDoc), workflow.item, {consumeUsage: true, consumeResources: true});
+    return U().workflowUtils.specialItemUse(w, Array.from(workflow.targets).map(toDoc), workflow.item, {consumeResources: true});
 }
 async function impalingShot({document: item, workflow}) {
     if (!workflow.hitTargets?.size || !U().workflowUtils.isAttackType(workflow, 'rangedWeaponAttack')) return;
@@ -376,7 +376,7 @@ async function impalingShot({document: item, workflow}) {
     const act = item.system.activities.find(a => a.identifier === 'use') ?? item.system.activities.contents[0];
     if (!act || !canUse(item)) return;
     if (!await U().dialogUtils.confirm(item.name, 'Use ' + esc(item.name) + ' on ' + esc(t.document.name) + '?', {userId: firstOwner(workflow.actor)})) return;
-    await U().workflowUtils.syntheticActivityRoll(act, Array.from(workflow.hitTargets).map(toDoc), roll(workflow.hitTargets, {consumeUsage: true, consumeResources: true, spellSlot: false}));
+    await U().workflowUtils.syntheticActivityRoll(act, Array.from(workflow.hitTargets).map(toDoc), roll(workflow.hitTargets, {consumeResources: true, spellSlot: false}));
 }
 async function brimstoneStep({workflow}) {
     const me = wfToken(workflow);
@@ -418,7 +418,7 @@ async function youDieOnMyCommand({document: item, workflow, ditem, targetToken})
     const ok = await U().dialogUtils.confirm(item.name, esc(targetToken.name) + ' would drop to 0 HP. Use ' + esc(item.name) + '?', {userId: firstOwner(owner)});
     if (!ok) return;
     const act = item.system.activities.contents[0];
-    if (act) await U().workflowUtils.syntheticActivityRoll(act, [targetToken], roll([targetToken], {consumeUsage: true, consumeResources: true, spellSlot: false}));
+    if (act) await U().workflowUtils.syntheticActivityRoll(act, [targetToken], roll([targetToken], {consumeResources: true, spellSlot: false}));
     U().workflowUtils.preventZeroHP(ditem);
 }
 // Telekinetic Seal: on a failed save, push 15 ft or knock Prone. CPR1 split it into a push and a prone
@@ -460,7 +460,7 @@ async function punishment({document: item, workflow}) {
     if (!act) return;
     const data = act.toObject();
     if (data.damage?.parts?.[0]) data.damage.parts[0].bonus = String(took.totalDamage);
-    await U().workflowUtils.syntheticActivityDataRoll(data, item, [toDoc(workflow.token)], roll([workflow.token], {consumeUsage: true, consumeResources: true, spellSlot: false}));
+    await U().workflowUtils.syntheticActivityDataRoll(data, item, [toDoc(workflow.token)], roll([workflow.token], {consumeResources: true, spellSlot: false}));
 }
 
 // ======================================================== registration

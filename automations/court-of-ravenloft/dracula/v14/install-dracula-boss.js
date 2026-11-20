@@ -337,4 +337,10 @@ if (actor.type === 'npc') {
 }
 if (!game.modules.get(MOD)?.api?.boss) report.push('<b>Nix Fix\'s boss runtime isn\'t running</b> (Legendary Actions, Regeneration, Infernal Ascension need it): update Nix Fix and reload.');
 
+// ---- 1.7.5: creature type (Nix 2026-11-16): undead for every Nix Fix check -------------------
+// His species (Dhampir) reads as humanoid, so Negative Energy Flood treated him as living (no temp HP, a save).
+await actor.update({'flags.nix-module.creatureType': 'undead'});
+if (actor.type === 'npc' && actor.system.details?.type && actor.system.details.type.value !== 'undead') await actor.update({'system.details.type.value': 'undead'});
+report.push('Creature type: <b>undead</b> for the Nix Fix checks (Negative Energy Flood feeds him, Bloodrift and Exsanguinate treat him as undead).');
+
 await ChatMessage.create({whisper: [game.user.id], content: '<b>Nix Fix: ' + actor.name + ' boss kit (v14)</b><ul><li>' + report.join('</li><li>') + '</li></ul>'});

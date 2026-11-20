@@ -87,12 +87,28 @@ export const fxAll = list => Array.from(list ?? []).map(fx);
 // Effect change list on either version (v14 keeps them in system.changes).
 export const changesOf = effect => effect?.system?.changes ?? effect?.changes ?? [];
 
+// Creature type, lower case (1.7.5). A Court character's own setting comes first (flags.nix-module.creatureType,
+// written by its installer: the Dhampir vampires are undead, Petra fey...), then Chris's Premades / Midi's typeOrRace,
+// then the sheet's creature type.
+export const creatureTypeOf = actor => String(actor?.flags?.['nix-module']?.creatureType
+    ?? cpr()?.actorUtils?.typeOrRace?.(actor) ?? globalThis.MidiQOL?.typeOrRace?.(actor) ?? actor?.system?.details?.type?.value ?? '').toLowerCase();
+
+// A Midi damage item's per-type lists on either version. Midi 14.7 / dnd5e 6.1 (CAT 0.1.9) renamed them:
+// damageDetail -> calculatedDamages (after traits), rawDamageDetail -> damages (as rolled). v13 keeps the old names.
+export const appliedDamages = ditem => ditem?.calculatedDamages ?? ditem?.damageDetail ?? [];
+export const rolledDamages = ditem => ditem?.damages ?? ditem?.rawDamageDetail ?? [];
+// Sum of one damage type in a list from appliedDamages / rolledDamages.
+export const damageOfType = (list, type) => Array.from(list ?? []).filter(d => d?.type === type).reduce((n, d) => n + (Number(d.value) || 0), 0);
+
 // ---------------------------------------------------------------- v14 adapter
 function catAdapter() {
     const u = globalThis.cat.utils;
-    const noSpend = o => ({consumeUsage: false, consumeResources: false, spellSlot: false, ...(o ?? {})});
+    const noSpend = o => ({consumeResources: false, spellSlot: false, ...(o ?? {})});
     const opt = o => {
         const r = noSpend(o);
+        // Chris's Premades 1 reads consumeUsage (shared calls keep it for v13); CAT 0.1.9 dropped it: only
+        // consumeResources / spellSlot count, so it isn't passed on.
+        delete r.consumeUsage;
         // CPR1 used `killAnim`; CAT has no switch for it (the item data's own autoanimations flag decides).
         delete r.killAnim;
         delete r.confirmTargets;

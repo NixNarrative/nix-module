@@ -7,9 +7,8 @@
 //  {name, event, pass, macros: [{macro, priority}]}) for:
 //   - Magicians Judge: Stasis v3 (advantage vs prone saves, Topple included)
 //   - Magicians Judge: Sand Shroud animation (on the effect the reaction applies)
-//   - Metamagic: Quickened, Heightened, Twinned (2024)
-//   - Sorcery Incarnate (second Metamagic while Innate Sorcery is active)
-//   - Sorcerous Restoration (asks after a Short Rest)
+//   - (1.7.5) Metamagic, Sorcery Incarnate, Innate Sorcery and Sorcerous Restoration moved to the
+//     shared "Sorcerer core (2024)" (v14 copy); this one no longer writes them
 //   - Mantle of Flame (starts/ends with Innate Sorcery) + Phoenix Spark
 //   - Hold Monster / Hold Person: end-of-turn Wisdom save with the live DC
 //  Also: converts his stored ATL.* light/sight keys to token.*, removes the
@@ -672,6 +671,15 @@ else {
         entry('Magicians Judge: Topple mark', 'roll', 'targetRollFinished', 50, toppleMark)]);
     await dropOld(staff, m => m.name === 'Magicians Judge: Stasis');
     report.push('<li>Stasis v3 installed (advantage vs prone saves; Topple via a "hit by a Topple weapon" mark).</li>');
+    // 1.7.5: Automated Masteries 5e (14.610) and CAT (setting "weaponMastery", default PCs) can both run Topple / Slow:
+    // two Con saves per Topple hit. Stasis marks any Topple hit, so it works with either; one of them should be off.
+    {
+        let catMastery = 'pc';
+        try { catMastery = game.settings.get('cat', 'weaponMastery') ?? 'pc'; } catch { /* setting renamed: skip */ }
+        const am = ['wm5e', 'automated-masteries', 'automated-masteries-5e'].map(id => game.modules.get(id)).find(m => m?.active);
+        if (am && catMastery !== 'none') report.push('<li><b>Check:</b> both ' + (am.title ?? am.id) + ' and CAT (Weapon Mastery: ' + catMastery
+            + ') run weapon masteries, so a Topple hit may ask for two saves (Dayus\'s Slow may apply twice). Turn one off: CAT settings > Mechanics > Weapon Mastery: None, or disable it in ' + (am.title ?? am.id) + '. Stasis works with either.</li>');
+    }
     const act = (staff.system.activities?.contents ?? []).find(a => /^sand shroud$/i.test(a.name ?? ''));
     const refId = act?.effects?.[0]?._id ?? act?.effects?.contents?.[0]?._id;
     const shroud = (refId && staff.effects.get(refId)) ?? staff.effects.find(e => e.name === 'Sand Shroud' && e.getFlag('world', 'nixMagiciansJudge'));
@@ -685,47 +693,14 @@ else {
     }
 }
  
-// ---- 2. Metamagic ------------------------------------------------------------------
-const points = actor.items.find(i => i.type === 'feat' && i.name.toLowerCase().trim() === 'sorcery points');
-for (const [label, names, marker, code] of [
-    ['Heightened Spell', ['heightened spell'], 'heightenedSpellPrimed', HEIGHTENED],
-    ['Twinned Spell', ['twinned spell'], 'twinnedSpellPrimed', TWINNED],
-    ['Quickened Spell', ['quickened spell'], 'quickenedSpellPrimed', QUICKENED]
-]) {
-    const it = findItem(names, 'feat');
-    if (!it) { report.push('<li><b>' + label + '</b> not found.</li>'); continue; }
-    const list = foundry.utils.deepClone(it.flags?.cat?.embeddedMacros ?? [])
-        .filter(m => m.name !== label && !(m.macros ?? []).some(x => String(x.macro).includes(marker)));
-    list.push({name: label, event: 'roll', pass: 'itemRollFinished', macros: [{priority: 50, macro: code}]});
-    await it.update({'flags.cat.embeddedMacros': list});
-    const dropped = await dropOld(it, m => String(m.macro).includes(marker));
-    const act = it.system.activities?.contents?.[0];
-    if (!act) report.push('<li><b>' + label + '</b> has no activity: add a Utility activity and run again.</li>');
-    else if (points && !(act.consumption?.targets ?? []).some(t => t.type === 'itemUses')) {
-        await act.update({'consumption.targets': [{type: 'itemUses', target: points.id, value: label === 'Twinned Spell' ? '1' : '2', scaling: {}}]});
-    }
-    report.push('<li>' + label + ' installed' + (dropped ? ' (old v13 copy removed)' : '') + '.'
-        + (premadeOn(it) === 'cpr2' ? ' <b>It also has a Chris\'s Premades 2 automation: set it to None in the Medkit.</b>' : '') + '</li>');
-}
- 
-// ---- 3. Sorcery Incarnate ------------------------------------------------------------
-const incarnateItem = actor.items.find(i => i.name.toLowerCase().trim() === 'sorcery incarnate');
-if (!incarnateItem) report.push('<li><b>Sorcery Incarnate</b> not found.</li>');
-else {
-    await setCat(incarnateItem, ['Sorcery Incarnate'], [entry('Sorcery Incarnate', 'roll', 'actorRollFinished', 20, incarnate)]);
-    await dropOld(incarnateItem, m => m.name === 'Sorcery Incarnate' || String(m.macro).includes('nixMetamagicPrimeOnly'));
-    report.push('<li>Sorcery Incarnate installed.</li>');
-}
- 
-// ---- 4. Sorcerous Restoration --------------------------------------------------------
-const restorationItem = actor.items.find(i => i.name.toLowerCase().trim() === 'sorcerous restoration');
-if (!restorationItem) report.push('<li><b>Sorcerous Restoration</b> not found.</li>');
-else {
-    await setCat(restorationItem, ['Sorcerous Restoration prompt'], [entry('Sorcerous Restoration prompt', 'rest', 'actorShort', 50, restoration)]);
-    await dropOld(restorationItem, m => m.name === 'Sorcerous Restoration prompt');
-    report.push('<li>Sorcerous Restoration will ask after a Short Rest.</li>');
-}
- 
+// ---- 2-4. Metamagic, Sorcery Incarnate, Sorcerous Restoration: Sorcerer core (1.7.5) ------
+// Bangiras moved to the shared "Sorcerer core (2024)" (Nix 2026-11-16): it owns these macros (same names, so
+// applying it replaces the ones this installer used to write). Nothing is written here any more.
+const coreOn = actor.items.some(i => (i.flags?.cat?.embeddedMacros ?? i.flags?.['chris-premades']?.embeddedMacros ?? [])
+    .some(m => m.name === 'Metamagic'));
+report.push('<li>Metamagic (Quickened, Heightened, Twinned and the rest), Sorcery Incarnate, Innate Sorcery and Sorcerous Restoration come from the <b>Sorcerer core (2024)</b> now'
+    + (coreOn ? ' (applied).' : ': <b>apply it</b> (after the Metamagic fix-up, before these fixes).') + '</li>');
+
 // ---- 5. Fire Shield check -------------------------------------------------------------
 const fireShield = actor.items.find(i => i.type === 'spell' && i.name.toLowerCase().trim() === 'fire shield');
 if (fireShield) report.push(premadeOn(fireShield) === 'cpr2'

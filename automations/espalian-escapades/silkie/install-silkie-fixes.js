@@ -190,7 +190,7 @@ async function setActivityMacros(item, activity, add) {
         else data = {name: 'Fey Ancestry', type: 'feat', img: 'icons/magic/nature/leaf-glow-teal.webp',
             system: {type: {value: 'race'}, description: {value: '<p>You have Advantage on saving throws you make to avoid or end the Charmed condition.</p>'}},
             effects: [{name: 'Fey Ancestry', img: 'icons/magic/nature/leaf-glow-teal.webp', transfer: true,
-                changes: [{key: 'flags.midi-qol.advantage.ability.save.all', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: "'charmed' in (options?.statuses ?? []) || /charm/i.test(item?.name ?? '')", priority: 20}]}]};
+                changes: [{key: 'flags.midi-qol.advantage.save.all', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: "'charmed' in (options?.statuses ?? []) || /charm/i.test(item?.name ?? '')", priority: 20}]}]};
         await actor.createEmbeddedDocuments('Item', [data]);
         report.push('<li>Fey Ancestry: added' + (src ? ' (copied from ' + src.parent.name + '\'s, automation included)' : ' (Advantage on saves against being Charmed)') + '.</li>');
     }

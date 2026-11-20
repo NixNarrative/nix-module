@@ -23,7 +23,7 @@
 //  Runs on the active GM's client. API: game.modules.get('nix-module').api.illrigger
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
-import {cpr, fx, ident as engineIdent, isCat, MODES, HOOKS} from './engine.mjs';
+import {cpr, creatureTypeOf, fx, ident as engineIdent, isCat, MODES, HOOKS} from './engine.mjs';
 import {take as takeBrawl} from './brawl.mjs';
 
 export const FLAG = 'illrigger';
@@ -132,7 +132,7 @@ export function sealsOn(actor) {
 export const tokenOf = actor => actor?.token?.object ?? actor?.getActiveTokens?.()[0] ?? null;
 const distance = (a, b) => (cpr()?.tokenUtils?.getDistance ?? MidiQOL.getDistance)(a, b, {});
 const isDown = actor => DOWN.some(s => actor?.statuses?.has(s)) || (actor?.system?.attributes?.hp?.value ?? 1) <= 0;
-const creatureType = actor => String(cpr()?.actorUtils?.typeOrRace?.(actor) ?? actor?.system?.details?.type?.value ?? '').toLowerCase();
+const creatureType = actor => creatureTypeOf(actor);
 export const living = actor => !['construct', 'undead'].includes(creatureType(actor));
 const inCombat = () => !!game.combat?.started;
 const turnKey = () => inCombat() ? game.combat.id + ':' + game.combat.round + ':' + game.combat.turn : null;

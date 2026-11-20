@@ -117,10 +117,15 @@ if (!sb) report.push('<li><b>Sorcerous Burst</b> not found.</li>');
 else {
     const upd = {['flags.' + MOD + '.' + FLAG]: {kind: 'sorcerousBurst'}};
     const fixed = [];
+    // 1.7.5: the data explodes natively as "1d8x@mod=8". The old strip removed only the "x", leaving "1d8@mod=8":
+    // @mod is 6, so the die became a d86 (4d86 with cantrip scaling). Strip the whole modifier (the v14 pattern),
+    // and repair a formula an earlier run already damaged ("d8@mod=8" -> "d8").
+    const NATIVE = /(d8)\s*x[o]?(?:@[a-z.]+|\d+)?(?:[<>=]+\d+)?/ig;
+    const DAMAGED = /(d8)(?:@[a-z.]+)(?:[<>=]+\d+)?/ig;
     for (const a of acts(sb)) (a.damage?.parts ?? []).forEach((p, i) => {
         const f = p.custom?.formula ?? '';
-        if (/d8\s*x/i.test(f)) {
-            upd['system.activities.' + a.id + '.damage.parts.' + i + '.custom.formula'] = f.replace(/(d8)\s*x[o]?\d*/ig, '$1');
+        if (/d8\s*x/i.test(f) || /d8@[a-z]/i.test(f)) {
+            upd['system.activities.' + a.id + '.damage.parts.' + i + '.custom.formula'] = f.replace(NATIVE, '$1').replace(DAMAGED, '$1');
             fixed.push(f);
         }
     });
@@ -140,6 +145,40 @@ else {
         + chr.toUpperCase() + ' modifier), each rolled as a real die.'
         + (fixed.length ? ' Removed the built-in exploding dice (' + esc(fixed.join(', ')) + ') so it can\'t double up.' : '')
         + (cpr ? ' <b>Chris\'s Premades automation is on this spell:</b> if it also explodes 8s, set its automation to None.' : '') + '</li>');
+}
+
+// ---- 6. Book of Vile Darkness (1.7.5, PETRA-PLAN "Last") -----------------------------------------
+// Dark Speech: no save, 3d6 psychic to every non-evil creature within 15 ft, 1d12 psychic to Petra, no daily limit.
+// Command Evil: Dominate Monster (DC 18) on an evil target, with its own 1/dawn use. D&D Beyond had both on the
+// book's single use and Dark Speech as a DC 17 Cha save on everyone.
+const book = actor.items.find(i => /^book of vile darkness/i.test(i.name.trim()));
+if (!book) report.push('<li><b>Book of Vile Darkness</b> not found.</li>');
+else {
+    const bacts = acts(book);
+    const darkOld = bacts.find(a => mine(a) === 'darkSpeech') ?? bacts.find(a => a.type === 'save') ?? bacts.find(a => a.type === 'damage');
+    const command = bacts.find(a => a.type === 'cast');
+    const upd = {['flags.' + MOD + '.' + FLAG]: {kind: 'vileBook'}};
+    const DARK_ID = 'nixDarkSpeech000';
+    if (darkOld && darkOld.id !== DARK_ID) {
+        const tmpl = darkOld.toObject().target?.template ?? {};
+        await book.update({['system.activities.-=' + darkOld.id]: null});
+        upd['system.activities.' + DARK_ID] = {_id: DARK_ID, type: 'damage', name: 'Dark Speech', img: darkOld.img ?? book.img,
+            activation: darkOld.toObject().activation ?? {type: 'action', value: 1}, consumption: {targets: [], scaling: {allowed: false}, spellSlot: false},
+            range: {units: 'self', override: true},
+            target: {affects: {type: 'creature', count: '', choice: false}, template: {...tmpl, type: tmpl.type || 'radius', size: tmpl.size || '15', units: 'ft', count: '', contiguous: false}, override: true},
+            damage: {critical: {allow: false}, parts: [{custom: {enabled: true, formula: '3d6'}, types: ['psychic']}]},
+            description: {chatFlavor: 'Every non-evil creature within 15 ft takes 3d6 psychic (no save); you take 1d12 psychic.'},
+            flags: {[MOD]: {[FLAG]: 'darkSpeech'}}};
+    } else if (darkOld) upd['system.activities.' + DARK_ID + '.consumption.targets'] = [];
+    if (command) {
+        upd['system.activities.' + command.id + '.name'] = 'Command Evil (Dominate Monster)';
+        upd['system.activities.' + command.id + '.uses'] = {max: '1', spent: Number(command.uses?.spent ?? 0) || 0, recovery: [{period: 'dawn', type: 'recoverAll', formula: ''}]};
+        upd['system.activities.' + command.id + '.consumption.targets'] = [{type: 'activityUses', target: '', value: '1', scaling: {}}];
+        upd['system.activities.' + command.id + '.flags.' + MOD + '.' + FLAG] = 'commandEvil';
+    }
+    await book.update(upd);
+    report.push('<li><b>Book of Vile Darkness</b>: ' + (darkOld ? '<b>Dark Speech</b>: no save, 3d6 psychic to every non-evil creature within 15 ft (evil ones and Petra are left out), then 1d12 psychic to her; no daily limit. ' : '<b>no Dark Speech activity found.</b> ')
+        + (command ? '<b>Command Evil</b>: Dominate Monster (DC 18) on an evil target, its own use per dawn.' : '<b>no Dominate Monster activity found.</b>') + '</li>');
 }
 
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }

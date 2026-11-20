@@ -13,10 +13,10 @@
 //  reaction itself, so ours is retired. Twin Blades bond, Panache text and Skill
 //  Expert merge were one-time v13 changes; this only checks them.
 //
-//  Chris's Premades 2 runs Cunning Strike from its Sneak Attack automation. We can't
-//  read which strike was picked from a documented field, so the damage-type change
-//  looks for the picked strike's activity id anywhere CPR2 / CAT store it on the
-//  workflow (V14-PORT-FOOLS-JOURNEY.md: confirm at the table).
+//  Chris's Premades 2 runs Cunning Strike from its Sneak Attack automation (an optional damage
+//  bonus). 1.7.5, checked in Chris's Premades 2.1.9: its menu lists activities carrying the generic
+//  attackRider macro tagged 'cunningStrike', rolls the picked ones on the hit target, and records them
+//  in the workflow property 'attackRiders', which the damage-type change reads after the bonuses.
 // =====================================================================
  
 const actor = canvas.tokens.controlled[0]?.actor ?? game.user.character;
@@ -63,6 +63,12 @@ const strikeData = (cost, extra = {}) => foundry.utils.mergeObject({
     target: {affects: {type: 'creature', count: '1'}, override: true},
     duration: {units: 'inst', override: true}
 }, extra);
+// Chris's Premades 2.1.9 offers a Cunning Strike option only when the activity carries its generic attackRider macro
+// tagged 'cunningStrike' (as its own Poison / Trip / Withdraw do); it then rolls the activity on the hit target itself.
+const RIDER = {
+    'flags.cat.macros.roll': [{source: 'chris-premades', identifier: 'attackRider', rules: 'all'}],
+    'flags.cat.genericConfig.chris-premades.attackRider': {tag: 'cunningStrike', workflowProperty: 'canSneak'}
+};
 const premadeOn = item => {
     if (!item) return null;
     const cat = item.flags?.cat ?? {};
@@ -75,31 +81,22 @@ const dexDC = {calculation: 'dex', formula: ''};
 // =====================================================================
 //  Macros
 // =====================================================================
-// Cunning Strike item: roll / actorDamageRollBonuses / 5. Count the damage rolls before Sneak Attack adds its own.
+// Cunning Strike item: roll / actorDamageRollBonuses / 5. Count the damage rolls before Sneak Attack adds its own
+// (CAT runs the optional bonuses, Sneak Attack among them, right after actorDamageRollBonuses).
 const bladeMark = async () => {
     workflow.nixRollsBeforeSneak ??= workflow.damageRolls?.length ?? 0;
 };
-// Cunning Strike item: roll / actorDamageRollBonuses / 950. Retype the Sneak Attack dice.
+// Cunning Strike item: roll / actorDamageRollComplete / 50. Retype the Sneak Attack dice.
+// Chris's Premades 2.1.9's Sneak Attack is an optional damage bonus; the strikes picked in its menu are stored as
+// activity uuids in the workflow property 'attackRiders' (generic attackRider). Both exist only after the optional
+// bonuses ran, so this can't run at actorDamageRollBonuses (1.7.5 fix: it never found the strike there).
 const bladeDamage = async () => {
     const strikes = document.getFlag('world', 'nixBladeStrikes') ?? {};
     const ids = new Set(Object.keys(strikes));
     if (!ids.size) return;
-    // Find picked strikes: CPR1 kept them at workflow['chris-premades'].cunningStrike.activities;
-    // on Chris's Premades 2 we look for the activity ids anywhere under its / CAT's workflow data.
-    const found = [];
-    const seen = new WeakSet();
-    const DM = foundry.abstract?.DataModel;
-    const walk = (o, depth) => {
-        if (o == null || depth > 5) return;
-        if (typeof o === 'string') { for (const id of ids) if (o === id || o.endsWith('.' + id) || o.endsWith('Activity.' + id)) found.push(id); return; }
-        if (typeof o !== 'object' || seen.has(o)) return;
-        if (o.documentName || (DM && o instanceof DM)) { if (ids.has(o.id)) found.push(o.id); return; }
-        seen.add(o);
-        const vals = o instanceof Map ? [...o.values()] : o instanceof Set ? [...o] : Array.isArray(o) ? o : Object.values(o);
-        for (const v of vals) walk(v, depth + 1);
-    };
-    for (const k of Object.keys(workflow)) if (/chris|cat|cunning|strike/i.test(k)) walk(workflow[k], 0);
-    const picked = [...new Set(found)];
+    const riders = workflowUtils.getWorkflowProperty(workflow, 'attackRiders') ?? [];
+    const picked = [];
+    for (const uuid of riders) for (const id of ids) if (String(uuid).endsWith('.' + id) && !picked.includes(id)) picked.push(id);
     if (!picked.length) return;
     const type = strikes[picked[0]]?.kind === 'radiant' ? 'radiant' : 'necrotic';
     const rolls = workflow.damageRolls ?? [];
@@ -293,18 +290,20 @@ else {
         img: 'icons/magic/perception/silhouette-stealth-shadow.webp', save: {ability: ['wis'], dc: dexDC}, effects: [],
         description: {chatFlavor: 'Wisdom save or Silenced until the start of your next turn.'}}));
     const map = {};
+    for (const a of [radiantAct, silentAct]) if (a) await a.update(RIDER);
     if (radiantAct) { map[radiantAct.id] = {kind: 'radiant', cost: 2}; await setCat(radiantAct, ['Blade strike effect'], [entry('Blade strike effect', 'roll', 'activityRollFinished', 50, radiant)]); }
     if (silentAct) { map[silentAct.id] = {kind: 'silent', cost: 2}; await setCat(silentAct, ['Blade strike effect'], [entry('Blade strike effect', 'roll', 'activityRollFinished', 50, silent)]); }
     await cs.update({'flags.world.-=nixBladeStrikes': null});
     await cs.setFlag('world', 'nixBladeStrikes', map);
     await setCat(cs, ['Blade strikes: mark', 'Blade strikes: damage'], [
         entry('Blade strikes: mark', 'roll', 'actorDamageRollBonuses', 5, bladeMark),
-        entry('Blade strikes: damage', 'roll', 'actorDamageRollBonuses', 950, bladeDamage)]);
-    report.push('<li>Radiant Strike and Silent Strike (2d6 each): conditions on a failed save; Sneak Attack damage turns radiant / necrotic (first strike picked wins). <b>(Confirm at the table that the damage type changes; see the checklist.)</b></li>');
+        entry('Blade strikes: damage', 'roll', 'actorDamageRollComplete', 50, bladeDamage)]);
+    report.push('<li>Radiant Strike and Silent Strike (2d6 each): offered in Chris\'s Premades 2\'s Sneak Attack menu (Cunning Strike), conditions on a failed save; Sneak Attack damage turns radiant / necrotic (first strike picked wins).</li>');
  
     const goadAct = await ensureActivity(cs, 'Goad (1d6)', 'save', strikeData(1, {
         img: 'icons/skills/social/intimidation-impressing.webp', save: {ability: ['wis'], dc: dexDC},
         description: {chatFlavor: 'Wisdom save or Goaded until the end of its next turn.'}}));
+    if (goadAct) await goadAct.update(RIDER);
     await setCat(goadAct, ['Goad'], [entry('Goad', 'roll', 'activityRollFinished', 50, goad)]);
     const charmFx = await ensureItemEffect(cs, 'nixAweFx', {
         name: 'Awed (Charmed)', img: 'icons/magic/control/hypnosis-mesmerism-swirl.webp', statuses: ['charmed'],
@@ -315,6 +314,7 @@ else {
         range: {units: 'ft', value: '30', override: true}, target: {affects: {type: 'creature', count: ''}, override: true},
         effects: [{_id: charmFx.id, onSave: false}],
         description: {chatFlavor: 'Creatures of your choice within 30 ft: Wisdom save or Charmed until the end of your next turn.'}}));
+    if (aweAct) await aweAct.update(RIDER);
     await setCat(aweAct, ['Awe targets'], [entry('Awe targets', 'roll', 'activityPreambleComplete', 50, awe)]);
     await dropOld(cs, ['Blade strikes: sync', 'Blade strikes: mark', 'Blade strikes: damage', 'Blade strike effect', 'Goad', 'Awe targets']);
     // Activity macros left under activity ids that no longer exist.

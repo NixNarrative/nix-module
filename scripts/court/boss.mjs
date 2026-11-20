@@ -17,7 +17,7 @@
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {biItem, burnAll, placeSeal, tokenOf} from './illrigger.mjs';
-import {cpr, fx, ident, isCat, HOOKS} from './engine.mjs';
+import {appliedDamages, cpr, damageOfType, fx, ident, isCat, HOOKS} from './engine.mjs';
 
 export const FLAG = 'boss';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -84,7 +84,7 @@ async function onRollFinished(workflow) {
             if (!target) return ui.notifications.warn('By the Throat: target a creature first.');
             await placeSeal(actor, target, 1, {free: true});
             const it = actor.items.find(i => ident(i) === 'byTheThroat') ?? actor.items.find(i => /by the throat/i.test(i.name));
-            if (it) await cpr().workflowUtils.syntheticItemRoll(it, [target], {consumeUsage: false, consumeResources: false});
+            if (it) await cpr().workflowUtils.syntheticItemRoll(it, [target], {consumeResources: false});
         } else if (kind === 'strike') {
             if (!target) return ui.notifications.warn('Legendary Strike: target a creature first.');
             const weapons = actor.items.filter(i => i.type === 'weapon' && i.system.equipped);
@@ -112,11 +112,13 @@ async function onRollFinished(workflow) {
 
 // ---------------------------------------------------------------- Regeneration
 // Radiant damage he takes is added up (after resistances) until the start of his next turn.
+// Midi 14.7 (v14) lists it in ditem.calculatedDamages, older Midi (v13) in ditem.damageDetail.
+export const radiantTaken = ditem => damageOfType(appliedDamages(ditem), 'radiant');
 function onTargetDamage(token, {ditem} = {}) {
     const actor = token?.actor;
     const b = bossOf(actor);
     if (!b || b.regen === false || !ditem) return;
-    const rad = (ditem.damageDetail ?? []).filter(d => d.type === 'radiant').reduce((n, d) => n + (Number(d.value) || 0), 0);
+    const rad = radiantTaken(ditem);
     if (rad <= 0) return;
     const total = (Number(b.radiantTaken) || 0) + rad;
     foundry.utils.setProperty(actor, 'flags.' + MODULE_ID + '.' + FLAG + '.radiantTaken', total);   // local copy for a second hit in the same event
@@ -192,14 +194,14 @@ export async function ascend(actor) {
     if (im && !imOn) {
         // v14: the item has two activities (Bonus Action and the death burst); roll the Bonus Action one.
         const use = isCat() ? (im.system.activities.find(a => a.activation?.type === 'bonus') ?? im.system.activities.contents[0]) : null;
-        if (use) await cpr().workflowUtils.syntheticActivityRoll(use, [], {consumeUsage: false, consumeResources: false});
-        else await cpr().workflowUtils.syntheticItemRoll(im, [], {consumeUsage: false, consumeResources: false});
+        if (use) await cpr().workflowUtils.syntheticActivityRoll(use, [], {consumeResources: false});
+        else await cpr().workflowUtils.syntheticItemRoll(im, [], {consumeResources: false});
     }
     const moh = actor.items.find(i => /^master of hell/i.test(i.name));
     const dark = moh?.system.activities.find(a => /darkness/i.test(a.name ?? '')) ?? moh?.system.activities.contents[0];
     if (dark) {
         ui.notifications.info('Infernal Ascension: place Master of Hell: Darkness (50-ft sphere within 150 ft).');
-        await cpr().workflowUtils.syntheticActivityRoll(dark, [], {consumeUsage: false, consumeResources: false});
+        await cpr().workflowUtils.syntheticActivityRoll(dark, [], {consumeResources: false});
     }
 }
 

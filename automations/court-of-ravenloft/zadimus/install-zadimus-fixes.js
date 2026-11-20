@@ -405,6 +405,18 @@ async function fixOne(actor) {
         report.push('Mage Slayer: a concentrating creature ' + actor.name + ' damages makes its concentration save with disadvantage; Guarded Mind (1/short rest): when ' + actor.name + ' fails an Int, Wis or Cha save you\'re asked whether to succeed instead. Built in, so set Gambit\'s / Chris\'s Premades\' Mage Slayer to none on her (one prompt).');
     }
 
+    // ---- 1.7.5: creature type (Nix 2026-11-16) ------------------------------------------------------
+    // Dhampir / humanoid species read as living, so Negative Energy Flood, Bloodrift, Exsanguinate and the other
+    // undead / living checks treated the Court vampires as living. Nix Fix reads flags.nix-module.creatureType first;
+    // an NPC stat block also gets it as its creature type.
+    async function creatureType() {
+        const T = {dayus: 'undead', lucian: 'undead', valintina: 'undead', sydmore: 'undead', zadimus: 'humanoid', octavian: 'humanoid'}[KEY];
+        if (!T) return;
+        if (actor.flags?.[MOD]?.creatureType !== T) await actor.update({['flags.' + MOD + '.creatureType']: T});
+        if (actor.type === 'npc' && actor.system.details?.type && actor.system.details.type.value !== T) await actor.update({'system.details.type.value': T});
+        report.push('Creature type: <b>' + T + '</b> for the Nix Fix checks (Negative Energy Flood, Bloodrift, Exsanguinate, Finger of Death).');
+    }
+
     await repairBadIds();
     await splitBundles();
 
@@ -483,6 +495,7 @@ async function fixOne(actor) {
     await infernalConduitV13();
     await vengefulShotV13();
     await mageSlayer();
+    await creatureType();
     await actor.update({['flags.' + MOD + '.court']: court});
     await ChatMessage.create({whisper: [game.user.id], content: '<b>Nix Fix: ' + actor.name + ' fixes</b><ul><li>' + report.join('</li><li>') + '</li></ul>'});
 }

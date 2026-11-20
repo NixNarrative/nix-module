@@ -289,6 +289,24 @@ for (const it of [flare, improved].filter(Boolean)) {
 if (flare) report.push('<li>Warding Flare' + (improved ? ' + Improved' : '') + ': ' + (premadeOn(flare) === 'cpr2' && (!improved || premadeOn(improved) === 'cpr2')
     ? 'Chris\'s Premades 2 handles both (the temp HP too); ours retired. Target confirmation off.'
     : '<b>apply Chris\'s Premades 2\'s Warding Flare and Improved Warding Flare in the Medkit</b> (ours is retired on v14).') + '</li>');
+// 1.7.5: Chris's Premades 2.1.9 rewrote both (Warding Flare now prompts when she or an ally is attacked; Improved Warding
+// Flare's temp HP runs from a roll macro on its own activity). Copies applied before 2.1.9 keep the old hooks, and the
+// Medkit may not flag Improved Warding Flare (its version stayed 2.1.4), so check here.
+{
+    const older = (v, than) => { const a = String(v ?? '0').split('.').map(Number), b = than.split('.').map(Number);
+        for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== b[i]) return (a[i] || 0) < b[i]; } return false; };
+    const stale = [];
+    for (const it of [flare, improved].filter(Boolean)) {
+        if (premadeOn(it) !== 'cpr2') continue;
+        const cat = it.flags?.cat ?? {};
+        const why = [];
+        if (older(cat.automation?.version, '2.1.9')) why.push('applied with Chris\'s Premades ' + (cat.automation?.version ?? '?'));
+        if (it === improved && (cat.macros?.item ?? []).length && !(cat.macros?.roll ?? []).length) why.push('still hooked to the old item macros, not 2.1.9\'s roll macro');
+        if (why.length) stale.push(it.name + ' (' + why.join('; ') + ')');
+    }
+    if (stale.length) report.push('<li><b>Re-apply in the Medkit (Chris\'s Premades 2.1.9 rewrote them): ' + stale.join(', ')
+        + '.</b> Until then Improved Warding Flare gives no temp HP. Then run Vina fixes again (target confirmation off).</li>');
+}
  
 // ---- 5. Hold Person (Chris's Premades 2 does the repeat save) + leftovers ---------------------------
 {

@@ -18,7 +18,7 @@
 //  Workflow parts run on the client running the attack; turn-start parts on the GM.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
-import {cpr, fx, MODES, HOOKS, teleport} from './engine.mjs';
+import {appliedDamages, cpr, creatureTypeOf, damageOfType, fx, MODES, HOOKS, rolledDamages, teleport} from './engine.mjs';
 
 export const FLAG = 'bloodrift';
 export const FORMS = {
@@ -43,7 +43,7 @@ const necroticImmune = actor => {
     const di = actor?.system?.traits?.di;
     return !!(di?.value?.has?.('necrotic') || (Array.isArray(di?.value) && di.value.includes('necrotic')) || di?.all);
 };
-const living = actor => !['construct', 'undead'].includes(String(MidiQOL.typeOrRace?.(actor) ?? actor?.system?.details?.type?.value ?? '').toLowerCase());
+const living = actor => !['construct', 'undead'].includes(creatureTypeOf(actor));
 
 // Best of Str, Dex (finesse forms only) and Cha: Bloodrift lets him use his "spellcasting" ability.
 export function bestAbility(actor, form) {
@@ -169,11 +169,11 @@ async function onDamageRolled(workflow) {
 }
 
 // Immunity -> resistance for the necrotic, and count the necrotic actually dealt.
+// dealt: after traits (Midi 14.7 calculatedDamages, v13 damageDetail); raw: as rolled (damages / rawDamageDetail).
+export const necroticOf = ditem => ({dealt: damageOfType(appliedDamages(ditem), 'necrotic'), raw: damageOfType(rolledDamages(ditem), 'necrotic')});
 function onTargetDamage(token, {workflow, ditem}) {
     if (!isMine(workflow) || !ditem) return;
-    const nec = d => (d ?? []).filter(x => x.type === 'necrotic').reduce((s, x) => s + (Number(x.value) || 0), 0);
-    let dealt = nec(ditem.damageDetail);
-    const raw = nec(ditem.rawDamageDetail);
+    let {dealt, raw} = necroticOf(ditem);
     const immune = cpr()?.actorUtils?.checkTrait?.(token.actor, 'di', 'necrotic');
     if (immune && raw > 0 && dealt === 0) {
         const half = Math.floor(raw / 2);

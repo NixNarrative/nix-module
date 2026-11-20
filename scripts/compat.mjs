@@ -22,17 +22,18 @@ export const TESTED_V13 = [
 ];
  
 // The v14 port was written against these (V14-MAPPING.md, Nov 2026). Not table-tested yet.
-// Midi 14.6.x supports dnd5e 6.0.x only: dnd5e 6.1 changes damage application.
+// 1.7.5: raised to the versions the v14 world runs since 2026-11-20 (CAT 0.1.9 needs Midi 14.7, DAE 14.6.10, dnd5e 6.1).
+// Checked against their source; still not table-tested.
 // CAT is pre-release, so any minor bump is treated as untested.
 export const TESTED_V14 = [
     {id: 'core', label: 'Foundry VTT', tested: '14.369', min: '14', below: '15'},
-    {id: 'dnd5e', label: 'D&D 5e system', tested: '6.0.6', min: '6.0.0', below: '6.1.0', system: true},
-    {id: 'midi-qol', label: 'Midi QOL', tested: '14.6.8', min: '14.6.5', below: '15.0.0', required: true},
-    {id: 'chris-premades', label: "Chris's Premades 2", tested: '2.1.6', min: '2.1.0', below: '3.0.0', required: true},
-    {id: 'cat', label: "Coven's Automation Toolkit (CAT)", tested: '0.1.6', min: '0.1.6', below: '0.2.0', required: true},
-    {id: 'dae', label: 'DAE', tested: '14.6.6', min: '14.6.4', below: '15.0.0'},
+    {id: 'dnd5e', label: 'D&D 5e system', tested: '6.1.1', min: '6.1.0', below: '6.2.0', system: true},
+    {id: 'midi-qol', label: 'Midi QOL', tested: '14.7.0', min: '14.7.0', below: '15.0.0', required: true},
+    {id: 'chris-premades', label: "Chris's Premades 2", tested: '2.1.9', min: '2.1.9', below: '3.0.0', required: true},
+    {id: 'cat', label: "Coven's Automation Toolkit (CAT)", tested: '0.1.9', min: '0.1.9', below: '0.2.0', required: true},
+    {id: 'dae', label: 'DAE', tested: '14.6.10', min: '14.6.10', below: '15.0.0'},
     {id: 'gambits-premades', label: "Gambit's Premades", tested: '3.0.5', min: '3.0.0', below: '4.0.0'},
-    {id: 'autoanimations', label: 'Automated Animations', tested: '8.0.6', min: '8.0.0', below: '9.0.0'},
+    {id: 'autoanimations', label: 'Automated Animations', tested: '8.0.7', min: '8.0.0', below: '9.0.0'},
     {id: 'vision-5e', label: 'Vision 5e', tested: '3.2.3', min: '3.0.0', below: '4.0.0'},
     {id: 'sequencer', label: 'Sequencer', tested: 'any', min: '0', below: null},
     {id: 'times-up', label: 'Times Up', tested: 'any', min: '0', below: null}
