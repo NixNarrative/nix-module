@@ -7,7 +7,7 @@ Older sections (1.5.1 to 1.7.4, and the Open list as it stood before 1.7.5): [UP
 ## Release rules
 - **Every release gets a new version number.** Never upload to GitHub twice under the same number: Foundry compares versions, so a second upload with the same number is never offered as an update (happened with 1.6.0, fixed by 1.6.1 / 1.7.0). Bump `version` and the `download` URL (`releases/download/v<version>/module.zip`) in module.json, tag the GitHub release `v<version>`, attach `module.json` + `module.zip`.
 
-## Built for 1.7.5 (2026-11-20, local only, not committed), needs table testing (v14 world first; Court / Petra items on v13 Barovia)
+## Built for 1.7.5 (2026-11-20, released on GitHub), needs table testing (v14 world first; Court / Petra items on v13 Barovia)
 v14 world updated 2026-11-20: Chris's Premades 2.1.9, CAT 0.1.9, Midi QOL 14.7.0, DAE 14.6.10, dnd5e 6.1.1. Checked against their source (CAT tag 0.1.9, Chris's Premades tag 2.1.9, Midi tag v14.7.0 on GitHub and the v13 branch on GitLab, dnd5e release-6.1.1).
 
 **Update items (2026-11-20)**
