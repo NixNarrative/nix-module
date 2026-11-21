@@ -30,6 +30,7 @@ import {registerStatBlock} from './court/statblock.mjs';
 import {registerBrawl} from './court/brawl.mjs';
 import {registerIllriggerSpells} from './court/illrigger-spells.mjs';
 import {registerCourtExtras} from './court/court-extras.mjs';
+import {registerJuggernaut} from './court/juggernaut.mjs';
 import * as illriggerFeatures from './court/illrigger-features.mjs';
  
 let panel;
@@ -92,6 +93,7 @@ Hooks.once('ready', () => {
     api.statBlock = registerStatBlock();
     api.brawl = registerBrawl();
     api.illriggerSpells = registerIllriggerSpells();
+    api.juggernaut = registerJuggernaut();
 });
 
 // Court of Ravenloft on v14: the Illrigger class features Chris's Premades 2 doesn't have, as CAT

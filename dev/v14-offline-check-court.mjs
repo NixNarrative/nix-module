@@ -165,7 +165,8 @@ for (const f of exportsList) { const ac = makeActor(JSON.parse(fs.readFileSync(f
 const selectedActors = select ? select.split(',').map(s => { const a = actors.find(a => a.name.toLowerCase().startsWith(s.trim().toLowerCase())); if (!a) throw new Error('no actor ' + s); return a; }) : [];
 const settings = {};
 const g = globalThis;
-g.foundry = {utils: {deepClone: clone, getProperty, setProperty, mergeObject, isEmpty: o => !o || !Object.keys(o).length, randomID,
+const expandObject = o => { const out = {}; for (const [k, v] of Object.entries(o ?? {})) setProperty(out, k, isObj(v) ? expandObject(v) : clone(v)); return out; };
+g.foundry = {utils: {deepClone: clone, getProperty, setProperty, mergeObject, expandObject, isEmpty: o => !o || !Object.keys(o).length, randomID,
     escapeHTML: s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])), AsyncFunction: Object.getPrototypeOf(async function () {}).constructor},
     applications: {api: {DialogV2: {prompt: async () => null, wait: async () => null, confirm: async () => false}}}};
 g.game = {actors, scenes: new Collection(), user: {id: 'gm', isGM: true, character: null}, users: new Collection(),
@@ -197,7 +198,7 @@ const BOSS = await import(new URL('../scripts/court/boss.mjs', import.meta.url))
 const PS = await import(new URL('../scripts/court/petra-spells.mjs', import.meta.url));
 // Runtime APIs the installers check for (registering them needs a canvas; the installers only test they exist).
 game.modules.set('nix-module', {id: 'nix-module', active: true, api: {illriggerFeatures: F, bloodrift: BR.registerBloodrift(), boss: BOSS.registerBoss(),
-    petraSpells: {LAYERS: PS.LAYERS, cpr2Owns: PS.cpr2Owns}, court: {stub: true}, statBlock: {stub: true}}});
+    petraSpells: {LAYERS: PS.LAYERS, cpr2Owns: PS.cpr2Owns}, court: {stub: true}, statBlock: {stub: true}, juggernaut: {stub: true}}});
 // ---------------------------------------------------------------- run
 const code = fs.readFileSync(installer, 'utf8');
 const AsyncFn = g.foundry.utils.AsyncFunction;
@@ -258,6 +259,8 @@ for (const [where, d] of docs()) {
         }
     }
     const old = d.flags?.['chris-premades']?.embeddedMacros;
+    // 1.7.6: v13 installers (Chris's Premades 1) are checked too: each embedded macro must compile.
+    for (const m of old ?? []) { total++; try { new AsyncFn(...SCOPE, 'trigger', 'socketUtils', m.macro); } catch (e) { console.log('COMPILE FAIL (CPR1)', where + ' :: ' + m.name, e.message); bad++; } }
     if (old?.length && !quiet) console.log('  (old CPR1 macros left)', where, old.map(m => m.name).join(', '));
     const oldAct = d.flags?.['chris-premades']?.embeddedActivityMacros;
     if (oldAct && !quiet) for (const [id, l] of Object.entries(oldAct)) if (l?.length) console.log('  (old CPR1 activity macros left)', where, id, l.map(m => m.name).join(', '));

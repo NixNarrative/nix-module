@@ -1,3 +1,22 @@
+# 1.7.6 (2026-11-20): Juggernaut boss kit
+Built 2026-11-20, **not table-tested**. v13 Barovia only (no v14 export yet). New installer **"Juggernaut: boss kit"** (Court of Ravenloft, his NPC sheet); runtime in `scripts/court/juggernaut.mjs`. Checked against Midi's v13 source and Chris's Premades 1.5.52.
+
+- **Creature type construct** (sheet + Nix Fix's own checks). **Senses:** Blindsight 30 ft, Tremorsense 120 ft, on the sheet and as token detection modes (prototype and placed tokens).
+- **Legendary Actions: 3 pips** (refilled at the start of his turn), each 1:
+  - **Charge:** 30-ft line (5 ft wide). Each creature in it takes 2d8 bludgeoning and makes a DC 13 Dex save or is knocked Prone. He's never caught in his own line. Move his token yourself.
+  - **Toss: Rock:** ranged attack (his Str), 30 ft. **Toss: Creature:** melee attack against a Prone creature, Large or smaller, within his Slam's reach (other targets are refused). A hit deals 2d8 bludgeoning and knocks the target Prone; a thrown creature then lands where the GM picks, within 30 ft. Nobody where it lands gets hurt.
+- **Legendary Resistance 3/day** (was 4): one prompt on a failed save, "succeed instead" or "accept". Midi QOL has no Legendary Resistance of its own on v13.
+- **Aura (30 ft):** 1d3 is rolled to chat when combat starts and at the start of each of his turns. The same number keeps the same aura. The active aura shows on his token (effect name + icon, plus a JB2A ring when Sequencer has one). A creature other than him that starts its turn in the aura makes one save while he has HP (Midi's normal save request, nothing else pops up):
+  1. **Tasha's Hideous Laughter**, DC 13 Wis: Incapacitated for that turn, Prone until the start of its next turn.
+  2. **Ray of Enfeeblement**, DC 15 Con: disadvantage on Con saves until the start of its next turn.
+  3. **Decaying Mist**, DC 15 Con: can't regain hit points until the start of its next turn (any healing is refused). Killing plants is flavor only.
+  The aura ends when he drops to 0 HP or the combat ends.
+- **Lightning Absorption:** lightning damage heals him by the amount instead (Midi damage hook; mixed damage nets out). Lightning is taken off his immunities / resistances / vulnerabilities so nothing else changes the amount, and if an effect still makes him immune, the rolled amount heals.
+- **Petrifying Gaze (1/day, action, 60 ft),** Flesh to Stone style, DC 15 Con. A failed save means Restrained and starting to harden. The creature then saves at the end of each of its turns: 3 failures = Petrified (until cured), 3 successes = free. The tally is in the effect's name.
+- Checks: all 13 `dev/*.test.mjs` pass (new `dev/juggernaut.test.mjs`); offline Court check against his export (exports/v13/juggernaut.json, 2026-11-20): 0 problems, stable over 2 runs. Charge / Toss spend a pip the way his own Smite / Stomp do, and his Legendary Actions text lists them. His prototype token already had See All 300 ft from D&D Beyond (left as it is). The Court offline checker now also compiles v13 (Chris's Premades 1) embedded macros.
+
+**To do in the world:** install 1.7.6 and reload (F5). In Nix Fix (Court of Ravenloft), bind Juggernaut if he isn't bound yet, then apply **"Juggernaut: boss kit"** to him. Nothing else needs re-applying.
+
 # 1.7.5 (2026-11-20): v14 caught up for Chris's Premades 2.1.9 / CAT 0.1.9, and the To Do list
 Built 2026-11-20, not table-tested yet. The v14 world now runs Chris's Premades 2.1.9, CAT 0.1.9, Midi QOL 14.7.0, DAE 14.6.10 and dnd5e 6.1.1; everything below was checked against their source.
 

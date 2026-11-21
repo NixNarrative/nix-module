@@ -4,7 +4,7 @@
 
 BBEGs, not a party. Checklist: Party Ability Checklist artifact, campaign tab "Court of Ravenloft" (ids cr-petra, cr-sydmore, cr-dayus, cr-dracula, cr-lucian, cr-valintina, cr-juggernaut, cr-octavian, cr-zadimus; rows cr-<name>-NN). 2026-11-11: rows rewritten for the boss stat blocks (sections Stat Block, Legendary Actions, Lair & Mythic Actions, Boss Traits, Seals & Burns, Traits & Actions); all reset to untested.
 Exports: Foundry 13.348, dnd5e 5.3.3 (Dayus 5.1.10: open his sheet once to migrate).
-Juggernaut (RavenLoft Vampires folder): export received 2026-11-09. CR 20 construct (Titan), Huge, colossus statblock. No automation yet (see "Juggernaut sheet notes").
+Juggernaut (RavenLoft Vampires folder): export received 2026-11-09. CR 20 construct (Titan), Huge, colossus statblock. Boss kit built in 1.7.6 (v13 only, not table-tested; see "Juggernaut sheet notes").
 
 | Actor | Class | Interdict DC | Seals | Conduit |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@ Juggernaut (RavenLoft Vampires folder): export received 2026-11-09. CR 20 constr
 | Dracula | Illrigger 20 Painkiller (boss) | 19 | unlimited (4d6) | 10 |
 | Lucian | Illrigger 15 Hellspeaker | 18 | 6 (3d6) | 8 |
 | Valintina | Illrigger 15 Architect of Ruin (Unfettered) | 18 | 6 (3d6) | 8 |
-| Juggernaut | CR 20 construct (colossus) | | | |
+| Juggernaut | CR 20 construct (colossus), boss kit 1.7.6 | | | |
 | Father Octavian (captain) | Illrigger 7 Architect of Ruin (Unfettered) | 16 | 5 (2d6 +5) | 4 |
 | Zadimus (captain) | Illrigger 7 Sanguine Knight (Lies) | 16 | 5 (2d6, +1d6 True Name) | 4 |
 
@@ -180,6 +180,16 @@ Goal (Nix, 2026-11-10): the "(Boss)" copies should look like monster stat blocks
 - Radiant Ray and Divine Beam say radiant in their text but their damage is set to necrotic: intended (Nix, 2026-11-09). Their text can be updated to match.
 - Slam's 20-ft push and Radiant Ray's "Large or smaller" prone aren't automated (Radiant Ray applies Prone to any size).
 - Divine Beam is currently spent (recharge 5-6).
+
+### Boss kit (1.7.6, v13): `juggernaut.mjs` + "Juggernaut: boss kit" (Nix 2026-11-20)
+Installer generated from `tools/court-boss-build/juggernaut-core.js`; NPC sheet only. Checked against his 2026-11-20 export (`exports/v13/juggernaut.json`: Slam reach 20, Legendary Actions Smite / Stomp, Legendary Resistance item with a legres consumption, no lightning traits, prototype token See All 300). Runtime acts on `flags.nix-module.juggernaut` {radius 30, gazeDc 15, tossRange 30, dcs {laughter 13, enfeeble 15, mist 15}, aura, auraCombat, absorbLightning}.
+- Creature type construct (`flags.nix-module.creatureType` + `details.type.value`). Senses: `senses.ranges.blindsight` 30, `tremorsense` 120; detection modes `blindsight` (or core `senseAll` without dnd5e's mode) 30 and `feelTremor` 120 on the prototype and every placed token.
+- Legendary Actions: native pips 3 (`resources.legact`), refilled at his turn start by `boss.mjs` (boss flag, `regen: false`, no lair). Items Charge (save activity `nixJuggCharge000`, line 30 x 5 ft, 2d8 bludgeoning `onSave: full`; failed saves knocked Prone at rollFinished; his own token dropped from the targets at preamble) and Toss (`nixJuggTossRock0` ranged 30 ft, `nixJuggTossCrea0` melee at Slam reach; Str attack, 2d8 bludgeoning; hits knocked Prone; Creature refused at preUseActivity unless one target, Prone, Large or smaller; a hit then lands via Chris's Premades Teleport crosshairs within 30 ft, no animation). Other Legendary Actions on the sheet are left alone and listed in the report.
+- Legendary Resistance: `resources.legres.max` 3; the "Legendary Resistance" item renamed (3/Day) and given a CPR1 embedded save macro (bonus, 50) that calls `api.juggernaut.legendaryResistance(trigger)`: a GM button prompt on a failed save with a DC (succeed / accept). Midi v13 has no Legendary Resistance handling.
+- Aura: active GM, `updateCombat`. The first turn change of a combat (his `auraCombat` != combat id) rolls 1d3 (`Roll.toMessage`); his own turn start rolls again (not twice on the same update). Aura effect on him ("Aura: <name>", 1-hour duration so the icon shows) + persistent Sequencer ring named "Juggernaut Aura <tokenId>" (first JB2A `template_circle.aura` match in the colour). Current combatant within 30 ft (Chris's Premades getDistance) of a living Juggernaut: one synthetic Midi save from him; failures get the effects (Laughter: Incapacitated `turnEnd` + Prone `turnStart`; Enfeeblement: `flags.midi-qol.disadvantage.save.con`; Mist: `juggernautNoHeal`, a `preUpdateActor` hook refuses any hp.value raise). Cleared at 0 HP (`updateActor`) and `deleteCombat`.
+- Lightning Absorption: `midi-qol.preTargetDamageApplication` (any client): lightning entries zeroed, one `healing` entry of minus the amount, then totalDamage / hpDamage / newHP / temp worked out like Midi's setupDamageDetails (Midi's card applies from damageDetail or hpDamage; negative heals). Amount: dealt, or rolled if a trait zeroed it; skipped when Midi's own `system.traits.da` absorption already did it. The installer strips lightning from di / dr / dv / da and lists effects that touch lightning traits.
+- Petrifying Gaze (1/Day, action, 60 ft, `nixJuggGaze00000`): failed DC 15 Con save -> effect "Petrifying (f/3 failed, s/3 saved)" (Restrained, tally in `flags.nix-module.juggernautPetrify`); end of each of its turns (`combat.previous`) a synthetic Con save; 3 failures -> Petrified status, 3 successes -> effect removed.
+- Not automated: moving him along Charge's line; Slam's 20-ft push; Radiant Ray's size limit on Prone (as before). Text-only Magic Resistance is unchanged.
 
 ## CPR's Illrigger coverage
 CPR 1.x (v13) has Illrigger as legacy content in scripts/macros/2014/classFeatures/illrigger: core class, all combat masteries, every interdict boon, Painkiller subclass only.

@@ -260,6 +260,8 @@ export const ENTRIES = [
     {id: 'dracula-bloodrift', title: 'Dracula: Bloodrift', kind: 'character', file: cr('dracula/install-bloodrift.js'), campaigns: [CR], actors: ['dracula'], order: 41,
         v14: {file: cr('dracula/v14/install-bloodrift.js')},
         does: 'Bloodrift replaces the Blood Moon Blade: Blood Gauge, three forms, Bloodlash, Red Mist, Ravenous Strikes, Bloodseeker / Hunted, Bloody Arc, Unleashing the Madness, The Hunger Within, Death Wish.'},
+    {id: 'juggernaut-boss', title: 'Juggernaut: boss kit', kind: 'character', file: cr('juggernaut/install-juggernaut-boss.js'), campaigns: [CR], actors: ['juggernaut'], order: 49,
+        does: 'His NPC sheet: creature type construct, Blindsight 30 / Tremorsense 120 (sheet + token), Legendary Actions 3 (Charge, Toss), Legendary Resistance 3/day with a prompt, 30-ft aura rolled 1d3 at combat start and each of his turns (Hideous Laughter / Ray of Enfeeblement / Decaying Mist), Lightning Absorption, Petrifying Gaze 1/day (Flesh to Stone style). v13 only until a v14 export exists.'},
     {id: 'make-stat-block', title: 'Make stat block (boss NPC)', kind: 'tool', file: cr('world/make-stat-block.js'), campaigns: [CR], order: 91, manual: true,
         v14: {file: cr('world/v14/make-stat-block.js')},
         does: 'Pick a boss character copy and a CR: makes an NPC actor with the same name (abilities, HP, AC, saves, skills, senses, traits, spell slots, every item incl. the Illrigger class), native Legendary Action / Resistance pips, each Legendary Action in the Legendary Actions section. The character is not changed. Then bind the NPC in its slot and re-apply the engine, fixes and boss kit. Run again to rebuild it.'}
