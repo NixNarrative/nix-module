@@ -32,6 +32,9 @@ import {registerIllriggerSpells} from './court/illrigger-spells.mjs';
 import {registerCourtExtras} from './court/court-extras.mjs';
 import {registerJuggernaut} from './court/juggernaut.mjs';
 import * as illriggerFeatures from './court/illrigger-features.mjs';
+import {registerSunlight} from './sunlight.mjs';
+import {registerDispelMagic} from './dispel-magic.mjs';
+import {registerVampireWeakness} from './vampire-weakness.mjs';
  
 let panel;
 const open = () => (panel ??= new NixPanel()).render({force: true});
@@ -78,6 +81,16 @@ Hooks.on('renderSettings', (app, html) => {
     target.append(btn);
 });
  
+// Every campaign (1.7.7): Sunlight Sensitivity vs sunlight spells, Nix Fix's Dispel Magic (2024 rules), and
+// Vampire Weakness's turn damage (only on items its Court installer marked).
+// Both need Midi; they run on v13 and v14.
+Hooks.once('ready', () => {
+    const api = game.modules.get(MODULE_ID).api;
+    try { api.sunlight = registerSunlight(); } catch (err) { console.error(TITLE + ' | sunlight', err); }
+    try { api.dispelMagic = registerDispelMagic(); } catch (err) { console.error(TITLE + ' | Dispel Magic', err); }
+    try { api.vampireWeakness = registerVampireWeakness(); } catch (err) { console.error(TITLE + ' | Vampire Weakness', err); }
+});
+
 // Court of Ravenloft runtime (Illrigger engine, Bloodrift, Dracula's boss kit, lieutenants, Petra's spells,
 // Make stat block). Each part acts only on actors and items its installer marked. The same files run on
 // v13 (Chris's Premades 1) and v14 (CAT): engine.mjs routes the helpers (docs/V14-PORT-COURT.md).

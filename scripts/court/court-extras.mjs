@@ -18,6 +18,7 @@ import {MODULE_ID, TITLE} from '../constants.mjs';
 import {isActiveGM, sealsOf} from './illrigger.mjs';
 import {cpr, fxAll, isCat, MODES, HOOKS, ident} from './engine.mjs';
 import {ltOf, gm} from './lieutenants.mjs';
+import {conduitRange as conduitFt} from './illrigger-range.mjs';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const say = (actor, content) => ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content});
@@ -173,11 +174,10 @@ export async function featureAttack(w, targets, source) {
 }
 
 // ======================================================== Infernal Conduit (v13)
-const unfettered = a => a.items.some(i => ident(i) === 'combatMasteryUnfettered' || /unfettered/i.test(i.name));
 function conduitRange(wf) {
     const t = wf.targets?.first?.();
     if (!wf.token || !t) return true;
-    const max = unfettered(wf.actor) ? 30 : 5;
+    const max = conduitFt(wf.actor);
     if (dist(wf.token, t) <= max) return true;
     ui.notifications.info('Infernal Conduit: the target must be within ' + max + ' ft.');
     wf.aborted = true;

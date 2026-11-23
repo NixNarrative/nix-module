@@ -23,6 +23,9 @@ const cfg = actor.flags?.[MOD]?.illrigger;
 if (!cfg || cfg.engine !== 'cat') return ui.notifications.warn('Lucian boss kit (v14): apply the Illrigger engine (v14) first.');
 if (actor.flags?.[MOD]?.court?.key !== 'lucian') return ui.notifications.warn('Lucian boss kit (v14): apply "Lucian: fixes" to ' + actor.name + ' first.');
 const report = [];
+// Seal range (1.7.7): the engine's recorded range, at least 60 ft with Combat Mastery: Unfettered (same rule as Nix Fix's illrigger-range.mjs).
+const SEAL_FT = game.modules.get(MOD)?.api?.illrigger?.sealRange?.(actor)
+    ?? Math.max(Number(cfg.range) || 30, actor.items.some(i => [i.flags?.['chris-premades']?.info?.identifier, i.flags?.[MOD]?.identifier, i.system?.identifier].includes('combatMasteryUnfettered') || /\bunfettered\b/i.test(i.name)) ? 60 : 0);
 const ident = d => d?.flags?.['chris-premades']?.info?.identifier ?? d?.flags?.[MOD]?.identifier ?? d?.flags?.cat?.identifier;
 const find = (id, re) => actor.items.find(i => id && ident(i) === id) ?? actor.items.find(i => re.test(i.name));
 const act = (id, type, data) => ({_id: id, type, ...data});
@@ -52,12 +55,12 @@ function legendary(signature, sigText, preferRanged) {
         name: 'Legendary Actions', type: 'feat', img: 'icons/magic/unholy/hand-claw-glow-orange.webp',
         system: {
             description: {value: '<p>' + actor.name + ' can take 3 Legendary Actions, one at a time, immediately after another creature\'s turn, and regains them at the start of their turn.</p>'
-                + '<ul><li><b>Seal (1).</b> Place a Baleful Interdict seal on a creature within ' + cfg.range + ' ft (spends a seal).</li>'
+                + '<ul><li><b>Seal (1).</b> Place a Baleful Interdict seal on a creature within ' + SEAL_FT + ' ft (spends a seal).</li>'
                 + '<li><b>Strike (2).</b> One attack with ' + (strike ? strike.name : 'a weapon') + '.</li>' + sigText + '</ul>'},
             type: {value: 'monster', subtype: ''},
             uses: {max: '3', spent: 0, recovery: [{period: 'turnStart', type: 'recoverAll'}]},
             activities: Object.assign({
-                nixLegendSeal000: act('nixLegendSeal000', 'utility', {name: 'Seal (1)', activation: {type: 'special', value: 1}, range: {value: String(cfg.range), units: 'ft'},
+                nixLegendSeal000: act('nixLegendSeal000', 'utility', {name: 'Seal (1)', activation: {type: 'special', value: 1}, range: {value: String(SEAL_FT), units: 'ft'},
                     target: {affects: {count: '1', type: 'creature'}}, consumption: {targets: [{type: 'itemUses', target: '', value: '1'}]}, flags: {[MOD]: {boss: 'seal'}}}),
                 nixLegendStrike0: act('nixLegendStrike0', 'utility', {name: 'Strike (2)', activation: {type: 'special', value: 2}, range: {units: 'self'},
                     target: {affects: {count: '1', type: 'creature'}}, consumption: {targets: [{type: 'itemUses', target: '', value: '2'}]}, flags: {[MOD]: {boss: 'strike'}}})
@@ -113,7 +116,7 @@ async function invokeHellDaily() {
 }
 
 await installLegendary({
-    nixLegendBewit00: act('nixLegendBewit00', 'utility', {name: 'Bewitching Seal (2)', activation: {type: 'special', value: 2}, range: {value: String(cfg.range), units: 'ft'},
+    nixLegendBewit00: act('nixLegendBewit00', 'utility', {name: 'Bewitching Seal (2)', activation: {type: 'special', value: 2}, range: {value: String(SEAL_FT), units: 'ft'},
         target: {affects: {count: '1', type: 'creature'}}, consumption: {targets: [{type: 'itemUses', target: '', value: '2'}]}, flags: {[MOD]: {court: 'bewitch'}}})
 }, "<li><b>Bewitching Seal (2).</b> A seal (spends one), then Charm Enemy if it's a Humanoid (spends a Charm Enemy use).</li>", false);
 await installResistance();

@@ -15,7 +15,9 @@ const [installer, ...exportsList] = args;
 // ---------------------------------------------------------------- utils
 const clone = o => o === undefined ? undefined : structuredClone(o);
 const getProperty = (o, p) => String(p).split('.').reduce((x, k) => x?.[k], o);
-const setProperty = (o, p, v) => { const ks = String(p).split('.'); let x = o; for (const k of ks.slice(0, -1)) x = (x[k] ??= {}); x[ks.at(-1)] = v; };
+// 1.7.7: Foundry's own setProperty walk (`k in target`), so a number where an object belongs throws the same
+// "Cannot use 'in' operator to search for 'rules' in 1" the live world gives (Valintina v14, 1.7.6).
+const setProperty = (o, p, v) => { const ks = String(p).split('.'); const last = ks.pop(); const t = ks.reduce((x, k) => { if (!(k in x) || x[k] === undefined) x[k] = {}; return x[k]; }, o); if (!(last in t) || t[last] !== v) t[last] = v; return true; };
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Set) && !(v instanceof Map);
 const mergeObject = (a, b) => { const o = isObj(a) ? clone(a) : {}; for (const [k, v] of Object.entries(b ?? {})) {
     if (k.includes('.')) { setProperty(o, k, v); continue; }
@@ -123,6 +125,8 @@ function makeItem(data, actor) {
     i.createEmbeddedDocuments = async (type, list) => list.map(d => { const ef = makeEffect(d, i); effs.set(ef.id, ef); return ef; });
     i.deleteEmbeddedDocuments = async (type, ids) => ids.forEach(id => effs.delete(id));
     i.createActivity = async (type, data) => { const id = randomID(); i.system.activities.set(id, makeActivity(id, {type, ...clone(data)}, i)); };
+    // dnd5e 4+ (v13 and v14): Item5e#deleteActivity = update({system.activities.<id>: _del}).
+    i.deleteActivity = async id => { if (i.system.activities.get(id)) await i.update({['system.activities.-=' + id]: null}); return i; };
     i.getRollData = () => ({});
     return i;
 }
@@ -165,6 +169,41 @@ for (const f of exportsList) { const ac = makeActor(JSON.parse(fs.readFileSync(f
 const selectedActors = select ? select.split(',').map(s => { const a = actors.find(a => a.name.toLowerCase().startsWith(s.trim().toLowerCase())); if (!a) throw new Error('no actor ' + s); return a; }) : [];
 const settings = {};
 const g = globalThis;
+// 1.7.7: two Item compendiums, so installers that search compendiums run offline. getIndex projects the fields the way
+// Foundry does (setProperty per field, dnd5e adds system.source / system.identifier / system.container to the defaults),
+// and one entry carries a number where dnd5e's source object belongs: asking for a path under it throws, as live.
+function mockPacks() {
+    const DEFAULT_FIELDS = ['name', 'type', 'img', 'system.container', 'system.identifier', 'system.source'];
+    const pack = (collection, packageName, packageType, docs) => ({collection, documentName: 'Item', metadata: {packageName, packageType, id: collection},
+        async getIndex({fields = []} = {}) {
+            return docs.map(d => { const e = {_id: d._id, uuid: 'Compendium.' + collection + '.Item.' + d._id};
+                for (const f of new Set([...DEFAULT_FIELDS, ...fields])) setProperty(e, f, clone(getProperty(d, f))); return e; });
+        },
+        async getDocument(id) { return clone(docs.find(d => d._id === id)) ?? null; }});
+    const spell = (id, name, rules) => ({_id: id, name, type: 'spell', img: '', system: {source: {book: '', rules}, identifier: name.toLowerCase().replace(/\s+/g, '-')}});
+    return new Collection([
+        ['world.odd-items', pack('world.odd-items', 'world', 'world', [{_id: 'oddSource000001', name: 'Blur', type: 'spell', img: '', system: {source: 1}}])],
+        ['dnd-players-handbook.spells', pack('dnd-players-handbook.spells', 'dnd-players-handbook', 'module', [spell('phbBlur00000001', 'Blur', '2024'), spell('phbHypnotic0001', 'Hypnotic Pattern', '2024')])]
+    ]);
+}
+// Fields the data models keep as objects (dnd5e 6.1.1 items / activities, Midi 14.7 activity fields, CAT macro lists).
+const OBJECT_PATHS = {item: ['system', 'system.source', 'system.description', 'system.uses', 'system.activation', 'system.range', 'system.duration', 'system.target'],
+    activity: ['activation', 'range', 'target', 'consumption', 'uses', 'duration', 'damage', 'save', 'attack', 'description', 'regionBehavior', 'regionLight', 'flags'],
+    effect: ['duration', 'system', 'flags']};
+function shapeProblems(where, d, kind) {
+    const out = [];
+    for (const p of OBJECT_PATHS[kind] ?? []) {
+        const v = getProperty(d, p);
+        if (v !== undefined && v !== null && (typeof v !== 'object')) out.push(where + ': ' + p + ' is ' + JSON.stringify(v) + ' (an object belongs there)');
+    }
+    for (const [type, list] of Object.entries(d?.flags?.cat?.macros ?? {})) {
+        if (!Array.isArray(list)) { out.push(where + ': flags.cat.macros.' + type + ' is not a list'); continue; }
+        for (const r of list) if (!r || typeof r !== 'object') out.push(where + ': flags.cat.macros.' + type + ' holds ' + JSON.stringify(r) + ' (an object belongs there)');
+    }
+    const auto = d?.flags?.cat?.automation;
+    if (auto !== undefined && auto !== null && typeof auto !== 'object') out.push(where + ': flags.cat.automation is ' + JSON.stringify(auto));
+    return out;
+}
 const expandObject = o => { const out = {}; for (const [k, v] of Object.entries(o ?? {})) setProperty(out, k, isObj(v) ? expandObject(v) : clone(v)); return out; };
 g.foundry = {utils: {deepClone: clone, getProperty, setProperty, mergeObject, expandObject, isEmpty: o => !o || !Object.keys(o).length, randomID,
     escapeHTML: s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])), AsyncFunction: Object.getPrototypeOf(async function () {}).constructor},
@@ -173,7 +212,7 @@ g.game = {actors, scenes: new Collection(), user: {id: 'gm', isGM: true, charact
     settings: {get: (n, k) => settings[n + '.' + k], set: async (n, k, v) => { settings[n + '.' + k] = v; }, settings: new Map()},
     modules: new Collection([['chris-premades', {id: 'chris-premades', active: true, version: '2.1.9', title: 'CPR'}], ['cat', {id: 'cat', active: true, version: '0.1.9', title: 'CAT'}],
         ['midi-qol', {id: 'midi-qol', active: true, version: '14.7.0', title: 'Midi QOL'}], ['dae', {id: 'dae', active: true, version: '14.6.10', title: 'DAE'}]]),
-    i18n: {localize: s => s, format: s => s}, system: {id: 'dnd5e', version: '6.1.1'}, release: {generation: 14}, combat: null, packs: new Collection()};
+    i18n: {localize: s => s, format: s => s}, system: {id: 'dnd5e', version: '6.1.1'}, release: {generation: 14}, combat: null, packs: mockPacks()};
 g.CONST = {ACTIVE_EFFECT_CHANGE_TYPES: {ADD: 'add', OVERRIDE: 'override', UPGRADE: 'upgrade', CUSTOM: 'custom'}};
 g.CONFIG = {Canvas: {darknessAnimations: {}}, DND5E: {senses: {devilsSight: 'Devil\'s Sight'}}, Dice: {fulfillment: {methods: {}}}};
 g.ChatMessage = {create: async d => { log.chat.push(d.content); return d; }, getSpeaker: () => ({}), getWhisperRecipients: () => []};
@@ -198,16 +237,20 @@ const BOSS = await import(new URL('../scripts/court/boss.mjs', import.meta.url))
 const PS = await import(new URL('../scripts/court/petra-spells.mjs', import.meta.url));
 // Runtime APIs the installers check for (registering them needs a canvas; the installers only test they exist).
 game.modules.set('nix-module', {id: 'nix-module', active: true, api: {illriggerFeatures: F, bloodrift: BR.registerBloodrift(), boss: BOSS.registerBoss(),
-    petraSpells: {LAYERS: PS.LAYERS, cpr2Owns: PS.cpr2Owns}, court: {stub: true}, statBlock: {stub: true}, juggernaut: {stub: true}}});
+    petraSpells: {LAYERS: PS.LAYERS, cpr2Owns: PS.cpr2Owns}, court: {stub: true}, statBlock: {stub: true}, juggernaut: {stub: true},
+    illrigger: {stub: true}, dispelMagic: {stub: true}, sunlight: {stub: true}, vampireWeakness: {stub: true}}});
 // ---------------------------------------------------------------- run
 const code = fs.readFileSync(installer, 'utf8');
 const AsyncFn = g.foundry.utils.AsyncFunction;
 try { new AsyncFn('canvas', code); } catch (e) { console.log('INSTALLER SYNTAX ERROR', e.message); process.exit(1); }
 for (const p of pre) { log.chat = []; await new AsyncFn('canvas', fs.readFileSync(p, 'utf8'))(canvasMock); if (!quiet) console.log('pre-ran', p); }
 const counts = [];
+let threw = 0;
 for (let r = 0; r < runs; r++) {
     log.chat = [];
-    await new AsyncFn('canvas', code)(canvasMock);
+    // 1.7.7: an installer that throws is a problem (it shows as "<title> failed: ..." in the Nix Fix window).
+    try { await new AsyncFn('canvas', code)(canvasMock); }
+    catch (e) { threw++; console.log('INSTALLER THREW (run ' + (r + 1) + '):', e.message, String(e.stack ?? '').split('\n').slice(1, 4).join(' | ')); }
     counts.push(countMacros());
 }
 function* docs() {
@@ -242,8 +285,16 @@ const API_0_1_9 = c => {
 const BANNED = [/\btrigger\.(entity|actor|token|config|options|roll|data|saveId|skillId)/, /\bsocketUtils\./, /genericUtils\.(remove|update|setFlag|deleteEmbeddedDocuments)\b/,
     /effectUtils\.createEffect\(/, /combatUtils\.inCombat/, /\bDialogApp\b/, /preventDeath/, /ACTIVE_EFFECT_MODES/, /rollUtils\.remoteRoll/, /activityUtils\.getActivityByIdentifier/,
     /templateUtils\./, /\bchrisPremades\./, /effectUtils\.addDependent/, /dialogUtils\.selectDocumentsDialog/, /tokenUtils\.pushToken/, /workflowUtils\.replaceDamage/, /\bSummons\./];
-let bad = 0, total = 0;
+let bad = threw, total = 0;
 const seen = new Set();
+// 1.7.7: a number (or string) written where the data model keeps an object.
+for (const a of actors) for (const i of a.items) {
+    const shape = [...shapeProblems(a.name + ' > ' + i.name, i, 'item'),
+        ...i.system.activities.contents.flatMap(ac => shapeProblems(a.name + ' > ' + i.name + ' > act ' + (ac.name || ac.type), ac, 'activity')),
+        ...i.effects.contents.flatMap(e => shapeProblems(a.name + ' > ' + i.name + ' > fx ' + e.name, e, 'effect'))];
+    for (const s of shape) { console.log('NUMBER WHERE AN OBJECT BELONGS', s); bad++; }
+}
+for (const a of actors) for (const e of a.effects) for (const s of shapeProblems(a.name + ' > ' + e.name, e, 'effect')) { console.log('NUMBER WHERE AN OBJECT BELONGS', s); bad++; }
 for (const [where, d] of docs()) {
     for (const m of d.flags?.cat?.embeddedMacros ?? []) {
         const label = where + ' :: ' + m.name + ' [' + m.event + '/' + m.pass + ']';

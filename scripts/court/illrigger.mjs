@@ -25,6 +25,7 @@
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {cpr, creatureTypeOf, fx, ident as engineIdent, isCat, MODES, HOOKS} from './engine.mjs';
 import {take as takeBrawl} from './brawl.mjs';
+import {sealRange} from './illrigger-range.mjs';
 
 export const FLAG = 'illrigger';
 export const SEAL_ID = 'balefulInterdictEffect';
@@ -140,7 +141,8 @@ const usedReaction = a => inCombat() && (cpr()?.actorUtils?.hasUsedReaction?.(a)
 const setReaction = async a => { if (inCombat()) await (cpr()?.actorUtils?.setReactionUsed?.(a) ?? MidiQOL.setReactionUsed?.(a)); };
 
 // Range from the Illrigger to the target, and whether he can act on it now.
-const rangeOf = owner => Number(cfgOf(owner)?.range) || 30;
+// 1.7.7: illrigger-range.mjs (config range, at least 60 ft with Combat Mastery: Unfettered, read live).
+const rangeOf = owner => sealRange(owner);
 export function inReach(owner, targetToken) {
     const me = tokenOf(owner);
     if (!me || !targetToken || isDown(owner)) return false;
@@ -713,7 +715,8 @@ export async function moveSeals(owner, targetToken, {pick} = {}) {
     if (!from.length) { ui.notifications.info('Move Seals: none of your seals are on a dead or unconscious creature.'); return 0; }
     const src = from.length === 1 ? from[0] : (pick ? await pick(from) : from[0]);
     if (!src) return 0;
-    if (distance(src, targetToken) > 30) { ui.notifications.info('Move Seals: the new target must be within 30 ft of ' + src.document.name + '.'); return 0; }
+    const reach = rangeOf(owner);
+    if (distance(src, targetToken) > reach) { ui.notifications.info('Move Seals: the new target must be within ' + reach + ' ft of ' + src.document.name + '.'); return 0; }
     const mine = sealsOf(src.actor, owner);
     const datas = mine.map(e => { const d = e.toObject(); delete d._id; return d; });
     await src.actor.deleteEmbeddedDocuments('ActiveEffect', mine.map(e => e.id));
@@ -730,5 +733,5 @@ export function registerIllrigger() {
     Hooks.on('updateActor', onUpdateActor);
     Hooks.on('createActiveEffect', onCreateEffect);
     Hooks.on('dnd5e.preRollDamageV2', onPreRollDamage);
-    return {cfgOf, sealsOn, sealsOf, sealDice, placeSeal, executeRow, burnAll, canPlace, burnFormula, isSeal, promptBurn, moveSeals, trueNameSeals, normalizeSeals, sealOwner};
+    return {cfgOf, sealRange, inReach, sealsOn, sealsOf, sealDice, placeSeal, executeRow, burnAll, canPlace, burnFormula, isSeal, promptBurn, moveSeals, trueNameSeals, normalizeSeals, sealOwner};
 }

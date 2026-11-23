@@ -23,6 +23,8 @@
 import {MODULE_ID, TITLE} from '../constants.mjs';
 import {cfgOf, moveSeals, placeSeal, promptBurn, sealsOf, sealsOn, tokenOf} from './illrigger.mjs';
 import {canUse, fixedTargets, fx, ident, teleport, toDoc, toObj} from './engine.mjs';
+import {conduitRange as conduitFt, sealRange} from './illrigger-range.mjs';
+import {legendaryResistance as juggernautLR} from './juggernaut.mjs';
 
 export const SOURCE = MODULE_ID;
 export const RULES = 'all';
@@ -36,7 +38,6 @@ const firstOwner = doc => U().queryUtils.firstOwner(doc, true) ?? game.user.id;
 const say = (actor, html) => ChatMessage.create({speaker: ChatMessage.getSpeaker({actor}), content: html});
 const itemOf = doc => doc?.documentName === 'Activity' ? doc.item : doc;
 const byIdent = (actor, id, re) => actor?.items.find(i => ident(i) === id) ?? (re ? actor?.items.find(i => re.test(i.name)) : undefined);
-const hasUnfettered = actor => !!byIdent(actor, 'combatMasteryUnfettered', /unfettered/i);
 const firstTarget = wf => wf?.targets?.first?.() ?? Array.from(wf?.targets ?? [])[0];
 const sizeOf = actor => U().actorUtils.getSize(actor);
 const equippedWeapons = actor => actor.items.filter(i => i.type === 'weapon' && i.system.equipped);
@@ -87,7 +88,8 @@ async function offerBoons(actor, target, {bonus = true} = {}) {
 async function placeSealRange({workflow}) {
     const t = firstTarget(workflow);
     if (!t) return;
-    const range = Number(cfgOf(workflow.actor)?.range) || (hasUnfettered(workflow.actor) ? 60 : 30);
+    // 1.7.7: a recorded 30 ft no longer hides Unfettered (illrigger-range.mjs: at least 60 ft with it).
+    const range = sealRange(workflow.actor);
     const me = wfToken(workflow);
     if (me && U().tokenUtils.getDistance(toDoc(me), toDoc(t)) > range) {
         ui.notifications.info('Baleful Interdict: the target must be within ' + range + ' ft.');
@@ -127,7 +129,7 @@ async function conduitRange({workflow}) {
     const t = firstTarget(workflow);
     const me = wfToken(workflow);
     if (!t || !me) return;
-    const max = hasUnfettered(workflow.actor) ? 30 : 5;
+    const max = conduitFt(workflow.actor);
     if (U().tokenUtils.getDistance(toDoc(me), toDoc(t)) > max) {
         ui.notifications.info(workflow.item.name + ': the target must be within ' + max + ' ft.');
         return true;
@@ -478,6 +480,8 @@ export const MACROS = {
     bloodPrice: {save: [{pass: 'actorBonus', macro: bloodPrice, priority: 50}]},
     combatMasteryInexorable: {save: [{pass: 'actorBonus', macro: inexorable, priority: 45}]},
     bloodPriceLegendary: {save: [{pass: 'actorBonus', macro: bloodPriceLegendary, priority: 50}]},
+    // 1.7.7: the Juggernaut's Legendary Resistance prompt on v14 (scripts/court/juggernaut.mjs; v13 uses a CPR1 save macro).
+    juggernautLegendaryResistance: {save: [{pass: 'actorBonus', macro: args => juggernautLR(args), priority: 50}]},
     combatMasteryLies: {roll: [{pass: 'actorPreambleComplete', macro: lies, priority: 25}]},
     infernalMajesty: {roll: [{pass: 'activityRollFinished', macro: infernalMajesty, priority: 50}]},
     interdictBoonStyxsApathyEffect: {combat: [{pass: 'actorTurnStart', macro: styxTurnStart, priority: 50}, {pass: 'actorTurnEnd', macro: styxTurnEnd, priority: 50}]},

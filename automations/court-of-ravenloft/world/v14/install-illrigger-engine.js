@@ -230,8 +230,35 @@ for (const actor of actors) {
     if (fixed) notes.push(fixed + ' boon activit' + (fixed > 1 ? 'ies' : 'y') + ': costs pointed at an item from another sheet; now his Baleful Interdict / Interdict Boons.');
 
     // ---- 1. Configuration (same shape as v13)
+    // ---- 0b. Combat Mastery: Unfettered (1.7.7): seals 60 ft, Infernal Conduit 30 ft (the runtime reads the sheet
+    //      live: scripts/court/illrigger-range.mjs), activity ranges to match so Midi's range check agrees, and no
+    //      disadvantage on ranged attacks next to a hostile creature (Midi 14.7.0 flags.midi-qol.ignoreNearbyFoes,
+    //      Workflow.ts checkRule("nearbyFoe")). dnd5e 6.1 effect changes live in system.changes with a type.
+    const unfetteredItem = actor.items.find(i => ident(i) === 'combatMasteryUnfettered' || /\bunfettered\b/i.test(i.name));
+    const unfettered = !!unfetteredItem;
+    if (unfetteredItem) {
+        const NEAR = 'flags.midi-qol.ignoreNearbyFoes';
+        const has = unfetteredItem.effects.find(e => e.transfer && (e.system?.changes ?? e.changes ?? []).some(c => c.key === NEAR));
+        if (!has) await unfetteredItem.createEmbeddedDocuments('ActiveEffect', [{name: 'Combat Mastery: Unfettered', img: unfetteredItem.img, transfer: true, disabled: false,
+            system: {changes: [{key: NEAR, type: 'override', value: '1', priority: 20}]}, flags: {[MOD]: {unfettered: true}}}]);
+        else if (has.disabled) await has.update({disabled: false});
+        const fixedRanges = [];
+        const widen = async (item, ft, from) => {
+            const upd = {};
+            for (const a of item?.system.activities ?? []) {
+                const r = a.range ?? {};
+                const cur = r.units === 'touch' ? 5 : (r.units === 'ft' ? Number(r.value) || 0 : null);
+                if (cur === null || cur >= ft || cur < from) continue;
+                upd['system.activities.' + a.id + '.range'] = {...(a.toObject?.().range ?? {}), value: String(ft), units: 'ft', override: true};
+            }
+            if (Object.keys(upd).length) { await item.update(upd); fixedRanges.push(item.name); }
+        };
+        for (const it of actor.items.filter(i => ident(i) === 'balefulInterdict' || /^baleful interdict\b/i.test(i.name))) await widen(it, 60, 5);
+        await widen(find(actor, 'infernalConduit', /^infernal conduit\b/i), 30, 5);
+        notes.push('Combat Mastery: Unfettered: seals 60 ft, Infernal Conduit 30 ft, no disadvantage on ranged attacks next to a hostile creature'
+            + (has ? '' : ' (effect added)') + (fixedRanges.length ? '; activity ranges widened: ' + fixedRanges.join(', ') : '') + '.');
+    }
     const cls = actor.items.find(i => i.type === 'class' && /illrigger/i.test(i.name));
-    const unfettered = actor.items.some(i => ident(i) === 'combatMasteryUnfettered' || /unfettered/i.test(i.name));
     const trueName = actor.items.find(i => i.type === 'weapon' && /true name/i.test(i.name));
     const ds = find(actor, 'deathstrike', /^deathstrike/i);
     const old = actor.flags?.[MOD]?.illrigger ?? {};

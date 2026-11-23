@@ -457,13 +457,20 @@ async function fixOne(actor) {
             const props = new Set(fan.system.properties ?? []);
             if (CONFIG.DND5E.itemProperties?.ret && !props.has('ret')) { props.add('ret'); upd['system.properties'] = Array.from(props); notes.push('Returning'); }
             // Its spells: the 2024 versions (Player's Handbook 2024 if installed, else any compendium copy marked 2024 rules).
+            // 1.7.7: no 'system.source.rules' index field any more. Asking a compendium index for that path made the v14 apply
+            // fail ("Cannot use 'in' operator to search for 'rules' in 1") when an Item in some compendium has a number where
+            // dnd5e's source object belongs. system.source is in dnd5e's own index fields (dnd5e.mjs compendiumIndexFields),
+            // so it is read from there with a type check, and one broken compendium is skipped instead of stopping the installer.
             async function find2024(name) {
                 let best = null;
+                const rulesOf = e => { const s = e?.system?.source; return s && typeof s === 'object' ? String(s.rules ?? '') : ''; };
                 for (const pack of game.packs.filter(p => p.documentName === 'Item')) {
-                    const idx = await pack.getIndex({fields: ['type', 'system.source.rules']});
+                    let idx;
+                    try { idx = await pack.getIndex({fields: ['type', 'system.source']}); }
+                    catch (err) { console.warn('Nix Fix | Shadow Fan: skipped compendium ' + pack.collection, err); continue; }
                     for (const e of idx) {
-                        if (e.type !== 'spell' || e.name.toLowerCase() !== name.toLowerCase()) continue;
-                        const rank = (pack.metadata.packageName === 'dnd-players-handbook' ? 4 : 0) + (String(foundry.utils.getProperty(e, 'system.source.rules')) === '2024' ? 2 : 0) + (pack.metadata.packageType === 'world' ? 0 : 1);
+                        if (e.type !== 'spell' || String(e.name ?? '').toLowerCase() !== name.toLowerCase()) continue;
+                        const rank = (pack.metadata.packageName === 'dnd-players-handbook' ? 4 : 0) + (rulesOf(e) === '2024' ? 2 : 0) + (pack.metadata.packageType === 'world' ? 0 : 1);
                         if (rank >= 2 && (!best || rank > best.rank)) best = {uuid: e.uuid ?? ('Compendium.' + pack.collection + '.Item.' + e._id), rank};
                     }
                 }

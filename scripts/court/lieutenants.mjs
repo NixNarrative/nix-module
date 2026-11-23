@@ -22,7 +22,8 @@
 //  module socket to the active GM (gm(action, data)). Questions go to the active GM.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
-import {biItem, cfgOf, executeRow, isActiveGM, living, placeSeal, sealsOf, sealsOn, tokenOf} from './illrigger.mjs';
+import {biItem, cfgOf, executeRow, inReach, isActiveGM, living, placeSeal, sealsOf, sealsOn, tokenOf} from './illrigger.mjs';
+import {sealRange} from './illrigger-range.mjs';
 import {cpr, creatureTypeOf, fxAll, isCat, MODES, HOOKS} from './engine.mjs';
 
 export const FLAG = 'court';
@@ -894,6 +895,11 @@ function onPreUse(activity) {
     const kind = kindOf(activity), a = activity?.actor;
     if (!kind || !a) return;
     if (['veil', 'interchange'].includes(kind) && sealsLeft(a) < 1) { ui.notifications.warn(activity.name + ': no seals left.'); return false; }
+    // 1.7.7: Bewitching Seal places a seal, so the seal range applies (60 ft with Unfettered).
+    if (kind === 'bewitch') {
+        const t = game.user.targets.first();
+        if (t && tokenOf(a) && !inReach(a, t)) { ui.notifications.warn(activity.name + ': ' + t.document.name + ' is beyond ' + sealRange(a) + ' ft.'); return false; }
+    }
     if (kind === 'quid') {
         const t = game.user.targets.first();
         if (t?.actor?.effects.some(e => e.flags?.[MODULE_ID]?.quidImmune === a.uuid)) { ui.notifications.warn('Quid Pro Quo: ' + t.document.name + ' is immune for 24 hours.'); return false; }

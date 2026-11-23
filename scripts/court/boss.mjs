@@ -16,7 +16,8 @@
 //  On an NPC stat block (1.6.1 "Make stat block") the counts use the native Legendary Action pips.
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
-import {biItem, burnAll, placeSeal, tokenOf} from './illrigger.mjs';
+import {biItem, burnAll, inReach, placeSeal, tokenOf} from './illrigger.mjs';
+import {sealRange} from './illrigger-range.mjs';
 import {appliedDamages, cpr, damageOfType, fx, ident, isCat, HOOKS} from './engine.mjs';
 
 export const FLAG = 'boss';
@@ -66,6 +67,14 @@ function onPreUse(activity) {
     if (kind === 'detonate' && !ascended(activity.actor)) {
         ui.notifications.warn(activity.item.name + ': only during Infernal Ascension (his second phase).');
         return false;
+    }
+    // 1.7.7: Legendary Seal / By the Throat place a seal: the seal range applies (60 ft with Unfettered).
+    if (kind === 'seal' || kind === 'throat') {
+        const t = game.user.targets?.first?.();
+        if (t && tokenOf(activity.actor) && !inReach(activity.actor, t)) {
+            ui.notifications.warn(activity.name + ': ' + t.document.name + ' is beyond ' + sealRange(activity.actor) + ' ft.');
+            return false;
+        }
     }
 }
 
