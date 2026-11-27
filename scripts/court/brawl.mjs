@@ -1,5 +1,5 @@
 // =====================================================================
-//  NIX FIX: Brawler feats, one popup per hit (1.7.1; v13 Chris's Premades 1)
+//  NIX FIX: Brawler feats, one popup per hit (1.7.1 v13 Chris's Premades 1; 1.7.8 v14 CAT)
 //
 //  Crusher, Grappler (2024) and Tavern Brawler (2024) each asked on every unarmed hit
 //  (Chris's Premades: "Move target?", "Attempt to grapple?", "Use Tavern Brawler?"). For an actor
@@ -13,9 +13,16 @@
 //  Automatic, no prompt: Crusher's critical-hit advantage, Grappler's advantage against the
 //  creature he's grappling. Tavern Brawler's reroll of 1s stays on its own effect.
 //  Runs on the active GM's client. API: game.modules.get('nix-module').api.brawl
+//  v14 (1.7.8, checked against Chris's Premades 2.1.9): only CPR2's Crusher asks on every hit ("move the
+//  target?", feats/crusher.mjs); Sydmore's v14 fixes take it off his Crusher and Nix Fix asks instead.
+//  Tavern Brawler's Push and Grappler's Punch and Grab are buttons there (no prompt); the same one popup
+//  offers them. Crusher's crit uses CPR2's own "Crusher: Critical" activity when the item has it; the
+//  move is CAT's displaceToken (CPR2's own placement); the grapple is Grappler's Punch and Grab activity
+//  (CPR2), else the Unarmed Strike's Grapple activity. Grappler's advantage stays with CPR2
+//  (grappleAttackAdvantage). Once-per-turn uses are kept on the feat (flags.nix-module.brawlTurn).
 // =====================================================================
 import {MODULE_ID, TITLE} from '../constants.mjs';
-import {cpr, isCat, HOOKS} from './engine.mjs';
+import {cpr, isCat, HOOKS, ident as courtIdent, fx, MODES} from './engine.mjs';
 
 export const FLAG = 'brawl';
 const KEYS = {tb: 'tavernBrawler', crusher: 'crusher', grapple: 'grappler'};
@@ -25,7 +32,10 @@ const TTL = 10 * 60 * 1000;
 const FALLBACK_MS = 1200;
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const ident = d => d?.flags?.['chris-premades']?.info?.identifier;
+const ident = d => courtIdent(d) ?? d?.system?.identifier;
+// v14: CAT's utilities (Chris's Premades 2 calls them through the same names).
+const catU = () => isCat() ? globalThis.cat?.utils : null;
+const catTry = fn => { try { return fn(); } catch { return undefined; } };
 const isActiveGM = () => game.user.isGM && (!game.users.activeGM || game.users.activeGM.id === game.user.id);
 const marked = a => !!a?.flags?.[MODULE_ID]?.[FLAG];
 const feat = (a, re) => a?.items?.find(i => i.type === 'feat' && re.test(i.name)) ?? null;
@@ -34,12 +44,14 @@ export const isUnarmed = item => !!item && (UNARMED.includes(ident(item)) || /un
 const inCombat = () => !!game.combat?.started;
 const turnKey = () => inCombat() ? game.combat.round + '-' + game.combat.turn : null;
 // Same per-turn flag Chris's Premades uses (flags.chris-premades.<key>.turn), so the two agree.
-const usedThisTurn = (item, key) => !!turnKey() && (cpr()?.combatUtils?.perTurnCheck ? !cpr().combatUtils.perTurnCheck(item, key) : item.flags?.['chris-premades']?.[key]?.turn === turnKey());
-const setUsed = (item, key) => cpr()?.combatUtils?.setTurnCheck ? cpr().combatUtils.setTurnCheck(item, key) : item.setFlag('chris-premades', key + '.turn', turnKey() ?? '');
+// v14: kept on the feat under flags.nix-module.brawlTurn.<key> (Chris's Premades 2 has no per-turn flag for these).
+const usedThisTurn = (item, key) => !!turnKey() && (isCat() ? item.flags?.[MODULE_ID]?.brawlTurn?.[key] === turnKey() : cpr()?.combatUtils?.perTurnCheck ? !cpr().combatUtils.perTurnCheck(item, key) : item.flags?.['chris-premades']?.[key]?.turn === turnKey());
+const setUsed = (item, key) => isCat() ? item.setFlag(MODULE_ID, 'brawlTurn.' + key, turnKey() ?? '') : cpr()?.combatUtils?.setTurnCheck ? cpr().combatUtils.setTurnCheck(item, key) : item.setFlag('chris-premades', key + '.turn', turnKey() ?? '');
 const SIZES = ['tiny', 'sm', 'med', 'lg', 'huge', 'grg'];
 const sizeOf = a => cpr()?.actorUtils?.getSize ? cpr().actorUtils.getSize(a) : Math.max(0, SIZES.indexOf(a?.system?.traits?.size));
-const damageTypes = wf => new Set((wf.damageRolls ?? []).map(r => r.options?.type).filter(Boolean));
-const meleeAttack = wf => wf.activity?.type === 'attack' && (cpr()?.workflowUtils?.getActionType ? cpr().workflowUtils.getActionType(wf) === 'mwak' : wf.activity?.actionType === 'mwak');
+const damageTypes = wf => (isCat() && cpr()?.workflowUtils?.getDamageTypes) ? new Set(cpr().workflowUtils.getDamageTypes(wf.damageRolls ?? []))
+    : new Set((wf.damageRolls ?? []).map(r => r.options?.type).filter(Boolean));
+const meleeAttack = wf => wf.activity?.type === 'attack' && (isCat() ? !!cpr()?.workflowUtils?.isAttackType?.(wf, 'meleeWeaponAttack') : cpr()?.workflowUtils?.getActionType ? cpr().workflowUtils.getActionType(wf) === 'mwak' : wf.activity?.actionType === 'mwak');
 
 // Which options this hit offers (pure apart from the per-turn flags; exported for tests).
 export function optionsFor({attacker, item, target, types, melee}) {
@@ -47,12 +59,23 @@ export function optionsFor({attacker, item, target, types, melee}) {
     if (!target?.actor || !melee) return out;
     if (f.tb && isUnarmed(item) && !usedThisTurn(f.tb, KEYS.tb)) out.push('tb');
     if (f.crusher && types.has('bludgeoning') && sizeOf(target.actor) <= sizeOf(attacker) + 1 && !usedThisTurn(f.crusher, KEYS.crusher)) out.push('crusher');
-    if (f.grapple && isUnarmed(item) && !usedThisTurn(f.grapple, KEYS.grapple) && grappleActivity(item)) out.push('grapple');
+    if (f.grapple && isUnarmed(item) && !usedThisTurn(f.grapple, KEYS.grapple) && grappleActivity(item, f.grapple)) out.push('grapple');
     return out;
 }
-function grappleActivity(item) {
+// v13: the Unarmed Strike's grapple (Chris's Premades 1). v14: Grappler's Punch and Grab (Chris's Premades 2),
+// else the Unarmed Strike's own Grapple save activity (dnd5e / D&D Beyond).
+export function activityById(item, id) {
+    const u = catU();
+    return (u ? catTry(() => u.itemUtils?.getActivityByIdentifier?.(item, id)) : undefined)
+        ?? item?.system?.activities?.find?.(a => a.identifier === id) ?? null;
+}
+export function grappleActivity(item, grappler) {
+    if (isCat()) {
+        const pg = activityById(grappler, 'punch-and-grab') ?? grappler?.system?.activities?.find?.(a => /punch and grab/i.test(a.name ?? ''));
+        if (pg) return pg;
+    }
     const byId = cpr()?.activityUtils?.getActivityByIdentifier?.(item, 'grapple');
-    return byId ?? item.system?.activities?.find?.(a => /grapple/i.test(a.name ?? '')) ?? null;
+    return byId ?? item?.system?.activities?.find?.(a => /grapple/i.test(a.name ?? '')) ?? null;
 }
 
 // ---------------------------------------------------------------- hits waiting for their damage
@@ -61,20 +84,30 @@ const fresh = p => !!p && p.expires > Date.now();
 
 async function onDamageRolled(wf) {
     try {
-        if (isCat() || !isActiveGM() || !marked(wf?.actor) || wf.hitTargets?.size !== 1) return;
+        if (!isActiveGM() || !marked(wf?.actor) || wf.hitTargets?.size !== 1) return;
         const target = wf.hitTargets.first();
         if (!target?.actor || target.actor.uuid === wf.actor.uuid) return;
         const types = damageTypes(wf), melee = meleeAttack(wf);
         // Crusher: a critical hit with bludgeoning damage gives attacks against it advantage until his next turn (automatic).
         const {crusher} = featsOf(wf.actor);
         if (crusher && wf.isCritical && types.has('bludgeoning') && !target.actor.effects.some(e => e.flags?.[MODULE_ID]?.crusherCrit === wf.id))
-            await target.actor.createEmbeddedDocuments('ActiveEffect', [{name: crusher.name, img: crusher.img, origin: crusher.uuid, transfer: false,
-                duration: {seconds: 12, rounds: 1}, changes: [{key: 'flags.midi-qol.grants.advantage.attack.all', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1', priority: 20}],
-                flags: {dae: {specialDuration: ['turnStartSource']}, [MODULE_ID]: {crusherCrit: wf.id}}}]);
+            await crusherCrit(crusher, target, wf);
         const options = optionsFor({attacker: wf.actor, item: wf.item, target, types, melee});
         if (!options.length) return;
         pending.set(target.actor.uuid, {attacker: wf.actor, attackerToken: wf.token, target, item: wf.item, options, expires: Date.now() + TTL, wfId: wf.id});
     } catch (err) { console.error(TITLE + ' | brawl', err); }
+}
+
+// Crusher's critical hit: attacks against it have advantage until the start of his next turn.
+// v14: Chris's Premades 2's own "Crusher: Critical" activity when the feat has it (what its crusher.js runs).
+export async function crusherCrit(crusher, target, wf) {
+    if (isCat()) {
+        const act = activityById(crusher, 'crusher-critical');
+        if (act) return cpr().workflowUtils.syntheticActivityRoll(act, [target]);
+    }
+    return target.actor.createEmbeddedDocuments('ActiveEffect', [fx({name: crusher.name, img: crusher.img, origin: crusher.uuid, transfer: false,
+        duration: {seconds: 12, rounds: 1}, changes: [{key: 'flags.midi-qol.grants.advantage.attack.all', mode: MODES.CUSTOM, value: '1', priority: 20}],
+        flags: {dae: {specialDuration: ['turnStartSource']}, [MODULE_ID]: {crusherCrit: wf.id}}})]);
 }
 
 // The Illrigger engine's after-damage dialog takes the section for the creature it's about (one window).
@@ -86,7 +119,7 @@ export function take(targetActorUuid, name = 'brawl') {
 
 // After the workflow: if no other window took it, its own small window.
 function onRollFinished(wf) {
-    if (isCat() || !isActiveGM() || !marked(wf?.actor)) return;
+    if (!isActiveGM() || !marked(wf?.actor)) return;
     for (const [k, p] of pending) {
         if (p.wfId !== wf.id) continue;
         setTimeout(() => {
@@ -125,7 +158,7 @@ export async function applyChoice(p, choice) {
     await setUsed(f, KEYS[choice]);
     const tgt = p.target, name = esc(tgt.document.name);
     if (choice === 'grapple') {
-        const act = grappleActivity(p.item);
+        const act = grappleActivity(p.item, f);
         if (!act) return false;
         await ChatMessage.create({speaker: ChatMessage.getSpeaker({actor: p.attacker}), content: '<b>' + esc(f.name) + ':</b> grapples ' + name + ' (free).'});
         await cpr().workflowUtils.syntheticActivityRoll(act, [tgt]);
@@ -145,7 +178,14 @@ export async function applyChoice(p, choice) {
 // image and size, up to 5 ft from where the target stands; the target goes where you click.
 // Cancelled crosshair = no move (the feat's once-per-turn use is already spent, as in CPR).
 export async function crusherMove(attackerToken, targetToken) {
-    const doc = targetToken.document, ch = cpr()?.crosshairUtils;
+    const doc = targetToken.document;
+    // v14: CAT's displaceToken, the placement Chris's Premades 2's Crusher uses (up to 5 ft from where it stands).
+    const u = catU();
+    if (u?.tokenUtils?.displaceToken) {
+        const r = await u.tokenUtils.displaceToken(doc, {sourceToken: attackerToken.document ?? attackerToken, range: 5});
+        return r !== false && r !== null;
+    }
+    const ch = cpr()?.crosshairUtils;
     if (!ch?.aimCrosshair) { await cpr().tokenUtils.pushToken(attackerToken, targetToken, 5); return true; }
     const half = doc.width / 2, widthAdjust = canvas.grid.distance * Math.floor(half);
     const fudgeDistance = widthAdjust + (widthAdjust !== half * canvas.grid.distance ? 2.5 : 0);

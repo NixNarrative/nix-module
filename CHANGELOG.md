@@ -1,3 +1,20 @@
+# 1.7.8 (2026-11-27): Brawler feats, one popup per hit on v14
+Built 2026-11-27, **built, not table-tested**. v14 (v13 unchanged). Checked against Chris's Premades 2.1.9 (feats/crusher.mjs, tavernBrawler.mjs, generic/grappleAttackAdvantage.mjs and its Crusher / Grappler / Tavern Brawler items). CAT 0.1.9's source wasn't available this session: the CAT calls used are the ones Chris's Premades 2.1.9 itself makes (tokenUtils.displaceToken, itemUtils.getActivityByIdentifier) plus the engine adapter's existing ones.
+
+- **Sydmore on v14: one popup per unarmed hit (Tavern Brawler / Crusher / Grappler),** the same window as v13's 1.7.1, shown inside the Baleful Interdict window when that opens for the same hit. On v14 only Chris's Premades 2's Crusher asked on every hit ("move the target?"); Tavern Brawler's Push and Grappler's Punch and Grab are buttons you'd click yourself. The Court fixes (v14) now take Chris's Premades 2's Crusher macro off the feat and mark him for Nix Fix's popup:
+  - *Push 5 ft (Tavern Brawler):* slides the target 5 ft away.
+  - *Move 5 ft (Crusher):* CAT's placement (the one Chris's Premades 2's Crusher uses), up to 5 ft.
+  - *Grapple (Grappler):* Grappler's Punch and Grab (Chris's Premades 2), or the Unarmed Strike's own Grapple save activity if Grappler isn't from the Medkit.
+  - One per hit; each feat once per turn (kept on the feat, `flags.nix-module.brawlTurn`), so Tavern Brawler's push on attack 1 still leaves Crusher's for attack 2.
+  - Crusher's critical hit (advantage on attacks against the target until his next turn) is automatic: Chris's Premades 2's own "Crusher: Critical" activity when the feat has it, else Nix Fix's effect. Grappler's advantage and Tavern Brawler's reroll of 1s stay with Chris's Premades 2.
+  - Re-applying Crusher in the Medkit brings its own prompt back: re-run Sydmore's fixes after any Medkit change to these three feats (the report says so).
+- The other Court fixes (v14: Dayus, Lucian, Valintina, Father Octavian, Zadimus) carry the same feat code; none of them has these feats, so nothing changes for them.
+- Checks: all 18 `dev/*.test.mjs` pass (new `dev/brawl-v14.test.mjs`: CAT-only globals; crit activity, displace, Punch and Grab, push, per-turn, Unarmed Strike Grapple fallback, size limit). Offline v14 (2 runs, 0 problems, stable): Sydmore, Dayus, Lucian, Valintina fixes after the Illrigger engine; Juggernaut boss kit against the new `exports/v14/juggernaut.json` (`--select Juggernaut`).
+
+**To do in the world:** install 1.7.8 and reload (F5).
+- **v14 (Court of Ravenloft):** in the Medkit, apply Chris's Premades 2's Crusher, Grappler and Tavern Brawler to Sydmore if you want theirs (optional; without them the popup still works, minus Grappler's advantage), then re-apply **Sydmore: fixes** and his **boss kit**. Juggernaut's v14 boss kit is ready to apply too.
+- **v13:** nothing to re-apply.
+
 # 1.7.7 (2026-11-23): Unfettered seal range, Sunlight Sensitivity, Vampire Weakness, Valintina v14, Juggernaut auras / switches / Toss, Dispel Magic, Juggernaut on v14
 Built 2026-11-22 / 23, **built, not table-tested**. v13 and v14. Checked against Midi (v13 branch, v14.7.0), Chris's Premades 1.5.52 / 2.1.9, CAT 0.1.9 and dnd5e release-6.1.1.
 

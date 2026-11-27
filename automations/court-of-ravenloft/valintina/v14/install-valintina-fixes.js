@@ -71,6 +71,7 @@ async function fixOne(actor) {
     async function feats() {
         const list = actor.items.filter(i => i.type === 'feat' && i.system.type?.value === 'feat');
         const lines = [];
+        let brawl = false;
         for (const f of list) {
             const n = f.name;
             if (/archery/i.test(n)) {
@@ -92,10 +93,35 @@ async function fixOne(actor) {
                         macros: [{priority: 50, distance: 5, dispositions: 'enemy', macro: SENTINEL}]}]);
                     lines.push(n + ': Quez\'s Sentinel (an enemy within 5 ft hits someone else: reaction attack, Speed 0 on a hit). Opportunity attacks stay with Gambit\'s.');
                 }
+            } else if (/^(crusher|grappler|tavern brawler)\b/i.test(n)) {
+                // 1.7.8: one push / grapple popup per hit (scripts/court/brawl.mjs, same as v13 1.7.1). Chris's Premades 2's
+                // Crusher asks "move the target?" on every bludgeoning hit: its macro comes off (its Crusher: Critical activity
+                // stays, Nix Fix runs it). Tavern Brawler's reroll of 1s and Grappler's advantage stay with Chris's Premades 2.
+                const id = /^crusher/i.test(n) ? 'crusher' : /^grappler/i.test(n) ? 'grappler' : 'tavernBrawler';
+                const roll = f.flags?.cat?.macros?.roll;
+                const isCrusherMacro = m => m?.source === 'chris-premades' && m?.identifier === 'crusher';
+                let off = false;
+                if (id === 'crusher' && Array.isArray(roll) && roll.some(isCrusherMacro)) {
+                    await f.update({'flags.cat.macros.roll': roll.filter(m => !isCrusherMacro(m))});
+                    off = true;
+                }
+                const fromCpr = off || cprRuns(f);
+                const hasAct = idf => !!f.system.activities?.find?.(a => a.identifier === idf);
+                brawl = true;
+                lines.push(n + ': ' + ({
+                    crusher: 'move 5 ft (you place it, once per turn) in the one after-hit popup; a critical hit gives attacks against the target advantage until his next turn, automatically'
+                        + (hasAct('crusher-critical') ? ' (Chris\'s Premades 2\'s Crusher: Critical)' : '') + '.',
+                    grappler: 'grapple (free, once per turn) in the one after-hit popup, with ' + (hasAct('punch-and-grab') ? 'Punch and Grab' : 'the Unarmed Strike\'s Grapple')
+                        + '; advantage against the creature he grapples: ' + (fromCpr ? 'Chris\'s Premades 2.' : '<b>not automated</b>.'),
+                    tavernBrawler: 'push 5 ft (once per turn) in the one after-hit popup; rerolling 1s: ' + (fromCpr ? 'Chris\'s Premades 2.' : 'the sheet\'s own Enhanced Unarmed Strike.')
+                })[id] + (off ? ' (Chris\'s Premades 2\'s "move the target?" prompt switched off)' : '')
+                    + (fromCpr ? '' : ' <i>Apply it in the Medkit (Chris\'s Premades 2), then re-run these fixes.</i>'));
             } else if (/^mage slayer\b/i.test(n)) {
                 lines.push(n + ': built in (see Mage Slayer below).');
             } else lines.push(n + ': ' + (cprRuns(f) ? 'Chris\'s Premades 2 runs it.' : 'sheet only (no automation needed or none built).'));
         }
+        await actor.update({['flags.' + MOD + '.brawl']: brawl});
+        if (brawl) lines.push('<b>One popup per hit:</b> push (Tavern Brawler or Crusher) <i>or</i> grapple (Grappler), shown in the Baleful Interdict window when that opens too. Re-applying Crusher in the Medkit brings its own prompt back: re-run these fixes after.');
         report.push('Feats: ' + (lines.length ? '<ul><li>' + lines.join('</li><li>') + '</li></ul>' : 'none on the sheet.'));
     }
 
